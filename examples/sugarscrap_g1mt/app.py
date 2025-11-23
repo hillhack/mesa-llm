@@ -9,7 +9,7 @@ from mesa.visualization import (
     make_space_component,
 )
 
-from examples.sugarscrap_g1mt.agents import TraderState
+from examples.sugarscrap_g1mt.agents import Resource, Trader
 from examples.sugarscrap_g1mt.model import SugarScapeModel
 from mesa_llm.parallel_stepping import enable_automatic_parallel_stepping
 from mesa_llm.reasoning.react import ReActReasoning
@@ -29,13 +29,6 @@ enable_automatic_parallel_stepping(mode="threading")
 
 load_dotenv()
 
-COP_COLOR = "#000000"
-
-agent_colors = {
-    TraderState.Total_Count: "#FE6100",
-    TraderState.Total_Sugar: "#648FFF",
-    TraderState.Total_Spice: "#DB28A2",
-}
 
 model_params = {
     "seed": {
@@ -43,18 +36,18 @@ model_params = {
         "value": 42,
         "label": "Random Seed",
     },
-    "inital_traders": 10,
+    "initial_traders": 10,
     "initial_resources": 10,
     "width": 10,
     "height": 10,
     "reasoning": ReActReasoning,
-    "llm_model": "ollama/gemma 3:1b",
+    "llm_model": "gemini/gemini-1.5-flash",
     "vision": 5,
     "parallel_stepping": True,
 }
 
 model = SugarScapeModel(
-    initial_traders=model_params["inital_traders"],
+    initial_traders=model_params["initial_traders"],
     initial_resources=model_params["initial_resources"],
     width=model_params["width"],
     height=model_params["height"],
@@ -69,15 +62,28 @@ model = SugarScapeModel(
 def trader_portrayal(agent):
     if agent is None:
         return
+
     portrayal = {
-        "Shape": "circle",
+        "shape": "circle",
         "Filled": "true",
         "r": 0.5,
         "Layer": 1,
-        "Color": agent_colors.get(agent.state, "#FFFFFF"),
-        "text": f"S:{agent.sugar} Sp:{agent.spice} MRS:{agent.calculate_mrs():.2f}",
         "text_color": "black",
     }
+
+    if isinstance(agent, Trader):
+        portrayal["Color"] = "red"
+        portrayal["r"] = 0.8
+        portrayal["text"] = f"S:{agent.sugar} Sp:{agent.spice}"
+
+    elif isinstance(agent, Resource):
+        portrayal["Color"] = "green"
+        portrayal["r"] = 0.4
+        portrayal["Layer"] = 0
+        if agent.current_amount > 0:
+            portrayal["alpha"] = agent.current_amount / agent.max_capacity
+        else:
+            portrayal["Color"] = "white"
 
     return portrayal
 
@@ -90,16 +96,10 @@ def post_process(ax):
 
 
 space_component = make_space_component(
-    model,
-    portrayal_function=trader_portrayal,
-    grid_width=10,
-    grid_height=10,
-    post_process=post_process,
+    trader_portrayal, post_process=post_process, draw_grid=False
 )
 
-chart_component = make_plot_component(
-    {state.name.lower(): state.name for state in TraderState}
-)
+chart_component = make_plot_component({"Total_Sugar": "blue", "Total_Spice": "red"})
 
 if __name__ == "__main__":
     page = SolaraViz(

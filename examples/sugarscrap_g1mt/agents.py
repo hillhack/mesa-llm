@@ -144,6 +144,8 @@ class Resource(mesa.discrete_space.CellAgent):
         self.current_amount = current_amount
         self.growback = growback
 
+        self.internal_state = []
+
         self.tool_manager = resource_tool_manager
 
     def step(self):

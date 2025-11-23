@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 from examples.sugarscrap_g1mt.agents import (
     Resource,
-    resource_tool_manager,
+    Trader,
     trader_tool_manager,
 )
 from mesa_llm.tools.tool_decorator import tool
@@ -49,7 +49,7 @@ def move_to_best_resource(agent: "LLMAgent") -> str:
         return f"agent {agent.unique_id} found no resources to move to."
 
 
-@tool(tool_manager=resource_tool_manager)
+@tool(tool_manager=trader_tool_manager)
 def propose_trade(
     agent: "LLMAgent", other_agent_id: int, sugar_amount: int, spice_amount: int
 ) -> str:
@@ -68,8 +68,12 @@ def propose_trade(
     other_agent = next(
         (a for a in agent.model.agents if a.unique_id == other_agent_id), None
     )
+
     if other_agent is None:
-        return f"agent {other_agent_id} not found."
+        return f"Agent {other_agent} not found."
+
+    if not isinstance(other_agent, Trader):
+        return f"agent {other_agent_id} is not a valid trader."
 
     # Simple trade acceptance logic for demonstration
     if other_agent.calculate_mrs() > agent.calculate_mrs():
