@@ -10,9 +10,6 @@ from mesa_llm.tools.tool_decorator import tool
 if TYPE_CHECKING:
     from mesa_llm.llm_agent import LLMAgent
 
-if TYPE_CHECKING:
-    from mesa_llm.llm_agent import LLMAgent
-
 
 @tool(tool_manager=trader_tool_manager)
 def move_to_best_resource(agent: "LLMAgent") -> str:
@@ -80,12 +77,21 @@ def propose_trade(
     )
 
     if other_agent is None:
-        return f"Agent {other_agent} not found."
+        return f"Agent {other_agent_id} not found."
 
     if not isinstance(other_agent, Trader):
         return f"agent {other_agent_id} is not a valid trader."
 
     # Simple trade acceptance logic for demonstration
+    if sugar_amount <= 0 or spice_amount <= 0:
+        return "sugar_amount and spice_amount must be positive."
+
+    if agent.sugar < sugar_amount or other_agent.spice < spice_amount:
+        return (
+            f"agent {agent.unique_id} or agent {other_agent_id} "
+            "does not have enough resources for this trade."
+        )
+
     if other_agent.calculate_mrs() > agent.calculate_mrs():
         agent.sugar -= sugar_amount
         agent.spice += spice_amount
