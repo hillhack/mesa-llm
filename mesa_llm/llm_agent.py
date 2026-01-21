@@ -124,14 +124,28 @@ class LLMAgent(Agent):
         if self.vision is not None and self.vision > 0:
             if isinstance(self.model.grid, SingleGrid | MultiGrid):
                 neighbors = self.model.grid.get_neighbors(
-                    tuple(self.pos), moore=True, include_center=False, radius=1
+                    tuple(self.pos),
+                    moore=True,
+                    include_center=False,
+                    radius=self.vision,
                 )
             elif isinstance(
                 self.model.grid, OrthogonalMooreGrid | OrthogonalVonNeumannGrid
             ):
-                neighbors = []
-                for neighbor in self.cell.connections.values():
-                    neighbors.extend(neighbor.agents)
+                # Find the cell containing this agent
+                agent_cell = None
+                for cell in self.model.grid.all_cells:
+                    if self in cell.agents:
+                        agent_cell = cell
+                        break
+
+                if agent_cell:
+                    neighborhood = agent_cell.get_neighborhood(radius=self.vision)
+                    neighbors = []
+                    for cell in neighborhood:
+                        neighbors.extend(cell.agents)
+                else:
+                    neighbors = []
 
             elif isinstance(self.model.space, ContinuousSpace):
                 neighbors, _ = self.get_neighbors_in_radius(radius=self.vision)
