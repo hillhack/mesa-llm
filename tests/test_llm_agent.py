@@ -1,78 +1,25 @@
 # tests/test_llm_agent.py
 
+import re
 
 import pytest
-from mesa.model import Model
-from mesa.space import ContinuousSpace, MultiGrid
+from mesa.discrete_space import OrthogonalMooreGrid
+from mesa.space import ContinuousSpace
 
 from mesa_llm import Plan
 from mesa_llm.llm_agent import LLMAgent
 from mesa_llm.memory.st_memory import ShortTermMemory
 from mesa_llm.reasoning.react import ReActReasoning
+from tests.conftest import DEFAULT_AGENT_CONFIG
 
-# MODULE-LEVEL CONSTANTS & HELPERS
-
-DEFAULT_AGENT_CONFIG = {
-    "reasoning": ReActReasoning,
-    "system_prompt": "Test",
-    "internal_state": ["test"],
-}
-
-
-class MockCell:
-    """Mock cell with coordinate attribute"""
-
-    def __init__(self, coordinate):
-        self.coordinate = coordinate
-
-
-# FIXTURES
-
-
-@pytest.fixture(autouse=True)
-def setup_api_key(monkeypatch):
-    """Auto-set dummy API key for all tests"""
-    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
-
-
-@pytest.fixture
-def basic_model():
-    """Create basic model without grid"""
-    return Model(seed=42)
-
-
-@pytest.fixture
-def grid_model():
-    """Create model with MultiGrid"""
-
-    class GridModel(Model):
-        def __init__(self):
-            super().__init__(seed=42)
-            self.grid = MultiGrid(10, 10, torus=False)
-
-    return GridModel()
-
-
-@pytest.fixture
-def basic_agent(basic_model):
-    """Create single agent with memory"""
-    agents = LLMAgent.create_agents(basic_model, n=1, vision=0, **DEFAULT_AGENT_CONFIG)
-    agent = agents[0]
-    agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
-    return agent
-
-
-@pytest.fixture
-def disable_memory(monkeypatch):
-    """Helper to disable memory add_to_memory method"""
-
-    def _disable(agent):
-        monkeypatch.setattr(agent.memory, "add_to_memory", lambda *args, **kwargs: None)
-
-    return _disable
-
-
-# TESTS
+# Fixtures (now in conftest.py):
+# - mock_environment
+# - basic_model
+# - grid_model
+# - basic_agent
+# - disable_memory
+# - DEFAULT_AGENT_CONFIG
+# - MockCell
 
 
 def test_apply_plan_adds_to_memory(grid_model, monkeypatch):
@@ -117,14 +64,7 @@ def test_apply_plan_adds_to_memory(grid_model, monkeypatch):
 
 def test_generate_obs_with_one_neighbor(grid_model, disable_memory):
     """Test observation generation with one neighbor"""
-    agents = LLMAgent.create_agents(
-        grid_model,
-        n=2,
-        reasoning=ReActReasoning,
-        system_prompt="Test",
-        vision=-1,
-        internal_state=["test"],
-    )
+    agents = LLMAgent.create_agents(grid_model, n=2, vision=-1, **DEFAULT_AGENT_CONFIG)
     agent1, agent2 = agents
     agent1.unique_id = 1
     agent2.unique_id = 2
@@ -185,38 +125,68 @@ def test_send_message_updates_both_agents_memory(grid_model, monkeypatch):
     monkeypatch.setattr(sender.memory, "add_to_memory", counting_add_to_memory)
     monkeypatch.setattr(recipient.memory, "add_to_memory", counting_add_to_memory)
 
-    # Send message
-    sender.send_message("Hello", [recipient])
+    # Send message and verify format
+    result = sender.send_message("Hello", [recipient])
+    pattern = r"LLMAgent 1 → \[<mesa_llm\.llm_agent\.LLMAgent object at 0x[0-9A-Fa-f]+>\] : Hello"
+    assert re.match(pattern, result)
 
     # Should be called twice: once for sender, once for recipient
     assert call_counter["count"] == 2
 
 
-def test_safer_cell_access_agent_with_cell_no_pos(basic_agent, disable_memory):
-    """Test agent location uses cell.coordinate when pos=None"""
-    basic_agent.pos = None
-    basic_agent.cell = MockCell(coordinate=(3, 4))
-
+# Parametrized tests for safer cell access scenarios
+@pytest.mark.parametrize(
+    "test_case,agent_setup,expected_location",
+    [
+        (
+            "agent_with_cell_no_pos",
+            lambda agent: setattr(
+                agent, "cell", type("MockCell", (), {"coordinate": (3, 4)})()
+            )
+            or setattr(agent, "pos", None),
+            (3, 4),
+        ),
+        (
+            "agent_without_cell_or_pos",
+            lambda agent: setattr(agent, "pos", None)
+            or (delattr(agent, "cell") if hasattr(agent, "cell") else None),
+            None,
+        ),
+    ],
+)
+def test_safer_cell_access_self(
+    basic_agent, disable_memory, test_case, agent_setup, expected_location
+):
+    """Test agent self location with various cell/pos configurations"""
+    agent_setup(basic_agent)
     disable_memory(basic_agent)
     obs = basic_agent.generate_obs()
-
-    assert obs.self_state["location"] == (3, 4)
-
-
-def test_safer_cell_access_agent_without_cell_or_pos(basic_agent, disable_memory):
-    """Test agent location returns None when no pos or cell"""
-    basic_agent.pos = None
-    if hasattr(basic_agent, "cell"):
-        delattr(basic_agent, "cell")
-
-    disable_memory(basic_agent)
-    obs = basic_agent.generate_obs()
-
-    assert obs.self_state["location"] is None
+    assert obs.self_state["location"] == expected_location
 
 
-def test_safer_cell_access_neighbor_with_cell_no_pos(grid_model, disable_memory):
-    """Test neighbor position uses cell.coordinate when pos=None"""
+@pytest.mark.parametrize(
+    "test_case,neighbor_setup,expected_position",
+    [
+        (
+            "neighbor_with_cell_no_pos",
+            lambda neighbor: setattr(
+                neighbor, "cell", type("MockCell", (), {"coordinate": (2, 2)})()
+            )
+            or setattr(neighbor, "pos", None),
+            (2, 2),
+        ),
+        (
+            "neighbor_without_cell_or_pos",
+            lambda neighbor: setattr(neighbor, "pos", None)
+            or (delattr(neighbor, "cell") if hasattr(neighbor, "cell") else None),
+            None,
+        ),
+    ],
+)
+def test_safer_cell_access_neighbor(
+    grid_model, disable_memory, test_case, neighbor_setup, expected_position
+):
+    """Test neighbor location with various cell/pos configurations"""
     agents = LLMAgent.create_agents(grid_model, n=2, vision=-1, **DEFAULT_AGENT_CONFIG)
     agent, neighbor = agents
     agent.unique_id = 1
@@ -227,37 +197,13 @@ def test_safer_cell_access_neighbor_with_cell_no_pos(grid_model, disable_memory)
 
     grid_model.grid.place_agent(agent, (1, 1))
 
-    # Neighbor has cell but no pos
-    neighbor.pos = None
-    neighbor.cell = MockCell(coordinate=(2, 2))
+    # Setup neighbor's cell/pos state
+    neighbor_setup(neighbor)
 
     disable_memory(agent)
     obs = agent.generate_obs()
 
-    assert obs.local_state["LLMAgent 2"]["position"] == (2, 2)
-
-
-def test_safer_cell_access_neighbor_without_cell_or_pos(grid_model, disable_memory):
-    """Test neighbor position returns None when no pos or cell"""
-    agents = LLMAgent.create_agents(grid_model, n=2, vision=-1, **DEFAULT_AGENT_CONFIG)
-    agent, neighbor = agents
-    agent.unique_id = 1
-    neighbor.unique_id = 2
-
-    agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
-    neighbor.memory = ShortTermMemory(agent=neighbor, n=5, display=True)
-
-    grid_model.grid.place_agent(agent, (1, 1))
-
-    # Neighbor has no pos or cell
-    neighbor.pos = None
-    if hasattr(neighbor, "cell"):
-        delattr(neighbor, "cell")
-
-    disable_memory(agent)
-    obs = agent.generate_obs()
-
-    assert obs.local_state["LLMAgent 2"]["position"] is None
+    assert obs.local_state["LLMAgent 2"]["position"] == expected_position
 
 
 def test_generate_obs_with_continuous_space(basic_model, disable_memory):
@@ -322,3 +268,36 @@ def test_generate_obs_no_grid_with_vision(basic_model, disable_memory):
 
     # Should return empty neighbors (fallback path)
     assert len(obs.local_state) == 0
+
+
+def test_generate_obs_with_orthogonal_grid(basic_model, disable_memory):
+    """Test neighbor detection with OrthogonalMooreGrid"""
+    # Add OrthogonalMooreGrid to model
+    basic_model.grid = OrthogonalMooreGrid(
+        [3, 3], torus=False, random=basic_model.random
+    )
+
+    agents = LLMAgent.create_agents(basic_model, n=2, vision=1, **DEFAULT_AGENT_CONFIG)
+
+    agent = agents[0]
+    neighbor = agents[1]
+
+    agent.unique_id = 1
+    neighbor.unique_id = 2
+
+    agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
+    neighbor.memory = ShortTermMemory(agent=neighbor, n=5, display=True)
+
+    # Place agents in adjacent cells (discrete space uses cell.add_agent())
+    cells = list(basic_model.grid.all_cells)
+    cells[4].add_agent(agent)  # Center
+    cells[5].add_agent(neighbor)  # Adjacent
+    agent.cell = cells[4]
+    neighbor.cell = cells[5]
+
+    disable_memory(agent)
+    obs = agent.generate_obs()
+
+    # Should detect neighbor via cell.connections
+    assert len(obs.local_state) == 1
+    assert "LLMAgent 2" in obs.local_state
