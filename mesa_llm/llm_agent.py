@@ -126,12 +126,27 @@ class LLMAgent(Agent):
 
         return tool_call_resp
 
-    async def agenerate_obs(self) -> Observation:
+    def _build_observation(self):
         """
-        Asynchronous version of generate_obs.
-        """
-        step = self.model.steps
+        Construct the observation data visible to the agent at the current model step.
 
+        This method encapsulates the shared logic used by both sync and
+        async observation generation.
+        This method constructs the agent's self state and determines which other
+        agents are observable based on the configured vision:
+
+        - vision > 0:
+            The agent observes all agents within the specified vision radius.
+        - vision == -1:
+            The agent observes all agents present in the simulation.
+        - vision == 0 or vision is None:
+            The agent observes no other agents.
+
+        The method supports grid-based and continuous spaces and builds a local
+        state representation for all visible neighboring agents.
+
+        Returns self_state and local_state of the agent
+        """
         self_state = {
             "agent_unique_id": self.unique_id,
             "system_prompt": self.system_prompt,
@@ -168,7 +183,16 @@ class LLMAgent(Agent):
                     s for s in i.internal_state if not s.startswith("_")
                 ],
             }
+        return self_state, local_state
 
+    async def agenerate_obs(self) -> Observation:
+        """
+        This method builds the agent's observation using the shared observation
+        construction logic, stores it in the agent's memory module using
+        async memory operations, and returns it as an Observation instance.
+        """
+        step = self.model.steps
+        self_state, local_state = self._build_observation()
         await self.memory.aadd_to_memory(
             type="observation",
             content={
@@ -181,52 +205,12 @@ class LLMAgent(Agent):
 
     def generate_obs(self) -> Observation:
         """
-        Returns an instance of the Observation dataclass enlisting everything the agent can see in the model in that step.
-
-        If the agents vision is set to anything above 0, the agent will get the details of all agents falling in that radius.
-        If the agents vision is set to -1, then the agent will get the details of all the agents present in the simulation at that step.
-        If it is set to 0 or None, then no information is returned to the agent.
-
+        This method delegates observation construction to the shared observation
+        builder, stores the resulting observation in the agent's memory module,
+        and returns it as an Observation instance.
         """
         step = self.model.steps
-
-        self_state = {
-            "agent_unique_id": self.unique_id,
-            "system_prompt": self.system_prompt,
-            "location": self.pos if self.pos is not None else self.cell.coordinate,
-            "internal_state": self.internal_state,
-        }
-        if self.vision is not None and self.vision > 0:
-            if isinstance(self.model.grid, SingleGrid | MultiGrid):
-                neighbors = self.model.grid.get_neighbors(
-                    tuple(self.pos), moore=True, include_center=False, radius=1
-                )
-            elif isinstance(
-                self.model.grid, OrthogonalMooreGrid | OrthogonalVonNeumannGrid
-            ):
-                neighbors = []
-                for neighbor in self.cell.connections.values():
-                    neighbors.extend(neighbor.agents)
-
-            elif isinstance(self.model.space, ContinuousSpace):
-                neighbors, _ = self.get_neighbors_in_radius(radius=self.vision)
-
-        elif self.vision == -1:
-            all_agents = list(self.model.agents)
-            neighbors = [agent for agent in all_agents if agent is not self]
-
-        else:
-            neighbors = []
-
-        local_state = {}
-        for i in neighbors:
-            local_state[i.__class__.__name__ + " " + str(i.unique_id)] = {
-                "position": i.pos if i.pos is not None else i.cell.coordinate,
-                "internal_state": [
-                    s for s in i.internal_state if not s.startswith("_")
-                ],
-            }
-
+        self_state, local_state = self._build_observation()
         # Add to memory (memory handles its own display separately)
         self.memory.add_to_memory(
             type="observation",

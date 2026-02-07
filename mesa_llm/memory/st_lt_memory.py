@@ -67,8 +67,10 @@ class STLTMemory(Memory):
 
         self.llm.system_prompt = self.system_prompt
 
-    # Prompt builder function to reduce redundancy
     def _build_consolidation_prompt(self) -> str:
+        """
+        Prompt builder function to reduce redundancy
+        """
         return f"""
             Short term memory:
                 {self.format_short_term()}
@@ -130,7 +132,10 @@ class STLTMemory(Memory):
             self.short_term_memory.popleft()
             should_consolidate = True
 
-        elif len(self.short_term_memory) > self.capacity:
+        elif (
+            len(self.short_term_memory) > self.capacity
+            and not self.consolidation_capacity
+        ):
             self.short_term_memory.popleft()
 
         return new_entry, should_consolidate

@@ -60,28 +60,33 @@ class EpisodicMemory(Memory):
             Only assess based on the entry's content and its value to the task at hand. Ignore style, grammar, or tone.
             """
 
-    def grade_event_importance(self, type: str, content: dict) -> float:
+    def _build_grade_prompt(self, type: str, content: dict) -> str:
         """
-        Grade this event based on the content respect to the previous memory entries
+        This helper assembles a prompt that includes the event type, event content,
+        and up to the five most recent memory entries for contextual grounding.
+        It is shared by both synchronous and asynchronous grading methods to
+        avoid duplicated prompt-construction logic.
         """
-        if len(self.memory_entries) in range(5):
+        if len(self.memory_entries) > 0:
+            entries = list(self.memory_entries)[-5:]
             previous_entries = "previous memory entries:\n\n".join(
-                [str(entry) for entry in self.memory_entries]
-            )
-        elif len(self.memory_entries) > 5:
-            previous_entries = "previous memory entries:\n\n".join(
-                [str(entry) for entry in self.memory_entries[-5:]]
+                [str(entry) for entry in entries]
             )
         else:
             previous_entries = "No previous memory entries"
 
-        prompt = f"""
+        return f"""
             grade the importance of the following event on a scale from 1 to 5:
             {type}: {content}
             ------------------------------
             {previous_entries}
             """
 
+    def grade_event_importance(self, type: str, content: dict) -> float:
+        """
+        Grade this event based on the content respect to the previous memory entries
+        """
+        prompt = self._build_grade_prompt(type, content)
         self.llm.system_prompt = self.system_prompt
 
         rsp = self.agent.llm.generate(
@@ -96,24 +101,7 @@ class EpisodicMemory(Memory):
         """
         Asynchronous version of grade_event_importance
         """
-        if len(self.memory_entries) in range(5):
-            previous_entries = "previous memory entries:\n\n".join(
-                [str(entry) for entry in self.memory_entries]
-            )
-        elif len(self.memory_entries) > 5:
-            previous_entries = "previous memory entries:\n\n".join(
-                [str(entry) for entry in self.memory_entries[-5:]]
-            )
-        else:
-            previous_entries = "No previous memory entries"
-
-        prompt = f"""
-            grade the importance of the following event on a scale from 1 to 5:
-            {type}: {content}
-            ------------------------------
-            {previous_entries}
-            """
-
+        prompt = self._build_grade_prompt(type, content)
         self.llm.system_prompt = self.system_prompt
 
         rsp = await self.agent.llm.agenerate(
