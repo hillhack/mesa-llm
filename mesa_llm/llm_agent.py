@@ -1,19 +1,16 @@
+import contextlib
+
 from mesa.agent import Agent
-from mesa.discrete_space import (
-    OrthogonalMooreGrid,
-    OrthogonalVonNeumannGrid,
-)
 from mesa.model import Model
 from mesa.space import (
     ContinuousSpace,
-    MultiGrid,
-    SingleGrid,
 )
 
 from mesa_llm import Plan
 from mesa_llm.memory.st_lt_memory import STLTMemory
 from mesa_llm.module_llm import ModuleLLM
 from mesa_llm.reasoning.reasoning import (
+    EnvironmentalState,
     Observation,
     Reasoning,
 )
@@ -45,6 +42,11 @@ class LLMAgent(Agent):
         vision: float | None = None,
         internal_state: list[str] | str | None = None,
         step_prompt: str | None = None,
+        # Environmental perception parameters
+        perceive_environment: bool = True,
+        perceive_objects: bool | str = False,  # False, "all", "pickable", "static"
+        max_visible_cells: int = 10,
+        global_env_attributes: list[str] | None = None,
     ):
         super().__init__(model=model)
 
@@ -75,6 +77,21 @@ class LLMAgent(Agent):
             internal_state = []
 
         self.internal_state = internal_state
+
+        # Environmental perception configuration
+        self.perceive_environment = perceive_environment
+        self.perceive_objects = perceive_objects
+        self.max_visible_cells = max_visible_cells
+        self.global_env_attributes = global_env_attributes or [
+            "weather",
+            "season",
+            "time_of_day",
+            "temperature",
+            "day",
+            "hour",
+            "market_price",
+            "global_event",
+        ]
 
     def __str__(self):
         return f"LLMAgent {self.unique_id}"
@@ -128,135 +145,441 @@ class LLMAgent(Agent):
 
     def _build_observation(self):
         """
-        Construct the observation data visible to the agent at the current model step.
+        Generate comprehensive observation including environmental data.
 
-        This method encapsulates the shared logic used by both sync and
-        async observation generation.
-        This method constructs the agent's self state and determines which other
-        agents are observable based on the configured vision:
-
-        - vision > 0:
-            The agent observes all agents within the specified vision radius.
-        - vision == -1:
-            The agent observes all agents present in the simulation.
-        - vision == 0 or vision is None:
-            The agent observes no other agents.
-
-        The method supports grid-based and continuous spaces and builds a local
-        state representation for all visible neighboring agents.
-
-        Returns self_state and local_state of the agent
+        Returns an Observation with:
+        - step: Current simulation step
+        - self_state: Agent's own state
+        - local_state: Nearby agents
+        - environmental_state: Environmental perception (if enabled)
         """
+        step = self.model.steps
+
+        # Get self state
         self_state = {
             "agent_unique_id": self.unique_id,
             "system_prompt": self.system_prompt,
-            "location": (
-                self.pos
-                if self.pos is not None
-                else (
-                    getattr(self, "cell", None).coordinate
-                    if getattr(self, "cell", None) is not None
-                    else None
-                )
-            ),
+            "location": self._get_agent_location(),
             "internal_state": self.internal_state,
         }
-        if self.vision is not None and self.vision > 0:
-            # Check which type of space/grid the model uses
-            grid = getattr(self.model, "grid", None)
-            space = getattr(self.model, "space", None)
 
-            if grid and isinstance(grid, SingleGrid | MultiGrid):
-                neighbors = grid.get_neighbors(
-                    tuple(self.pos),
-                    moore=True,
-                    include_center=False,
-                    radius=self.vision,
-                )
-            elif grid and isinstance(
-                grid, OrthogonalMooreGrid | OrthogonalVonNeumannGrid
-            ):
-                agent_cell = next(
-                    (cell for cell in grid.all_cells if self in cell.agents),
-                    None,
-                )
-                if agent_cell:
-                    neighborhood = agent_cell.get_neighborhood(radius=self.vision)
-                    neighbors = [a for cell in neighborhood for a in cell.agents]
-                else:
-                    neighbors = []
+        # Get local agents (neighbors)
+        local_state = self._get_local_state()
 
-            elif space and isinstance(space, ContinuousSpace):
-                all_nearby = space.get_neighbors(
-                    self.pos, radius=self.vision, include_center=True
-                )
-                neighbors = [a for a in all_nearby if a is not self]
+        # Get environmental state
+        environment_state = None
+        if self.perceive_environment:
+            environment_state = self._get_environmental_state()
 
-            else:
-                # No recognized grid/space type
-                neighbors = []
-
-        elif self.vision == -1:
-            all_agents = list(self.model.agents)
-            neighbors = [agent for agent in all_agents if agent is not self]
-
-        else:
-            neighbors = []
-
-        local_state = {}
-        for i in neighbors:
-            local_state[i.__class__.__name__ + " " + str(i.unique_id)] = {
-                "position": (
-                    i.pos
-                    if i.pos is not None
-                    else (
-                        getattr(i, "cell", None).coordinate
-                        if getattr(i, "cell", None) is not None
-                        else None
-                    )
-                ),
-                "internal_state": [
-                    s for s in i.internal_state if not s.startswith("_")
-                ],
-            }
-        return self_state, local_state
-
-    async def agenerate_obs(self) -> Observation:
-        """
-        This method builds the agent's observation using the shared observation
-        construction logic, stores it in the agent's memory module using
-        async memory operations, and returns it as an Observation instance.
-        """
-        step = self.model.steps
-        self_state, local_state = self._build_observation()
-        await self.memory.aadd_to_memory(
-            type="observation",
-            content={
-                "self_state": self_state,
-                "local_state": local_state,
-            },
-        )
-
-        return Observation(step=step, self_state=self_state, local_state=local_state)
-
-    def generate_obs(self) -> Observation:
-        """
-        This method delegates observation construction to the shared observation
-        builder, stores the resulting observation in the agent's memory module,
-        and returns it as an Observation instance.
-        """
-        step = self.model.steps
-        self_state, local_state = self._build_observation()
-        # Add to memory (memory handles its own display separately)
+        # Add to memory
         self.memory.add_to_memory(
             type="observation",
             content={
                 "self_state": self_state,
                 "local_state": local_state,
+                "environment_state": environment_state,
             },
         )
 
-        return Observation(step=step, self_state=self_state, local_state=local_state)
+        return Observation(
+            step=step,
+            self_state=self_state,
+            local_state=local_state,
+            environment_state=environment_state,
+        )
+
+    def _get_agent_location(self) -> tuple | None:
+        """Get agent's current position."""
+        if self.pos is not None:
+            return self.pos
+        if hasattr(self, "cell") and self.cell is not None:
+            return self.cell.coordinate
+        return None
+
+    def _get_location_of(self, agent) -> tuple | None:
+        """Get location of another agent."""
+        if hasattr(agent, "pos") and agent.pos is not None:
+            return agent.pos
+        if hasattr(agent, "cell") and agent.cell is not None:
+            return agent.cell.coordinate
+        return None
+
+    def _get_local_state(self) -> dict:
+        """Get neighboring agents within vision."""
+        neighbors = self._get_neighbors()
+        local_state = {}
+
+        for agent in neighbors:
+            key = f"{type(agent).__name__} {agent.unique_id}"
+            local_state[key] = {
+                "position": self._get_location_of(agent),
+                "internal_state": [
+                    s
+                    for s in getattr(agent, "internal_state", [])
+                    if not str(s).startswith("_")
+                ],
+            }
+
+        return local_state
+
+    def _get_neighbors(self) -> list:
+        """Get agents within vision radius."""
+        if self.vision is None or self.vision == 0:
+            return []
+
+        # Vision = -1 means all agents
+        if self.vision == -1:
+            return [a for a in self.model.agents if a is not self]
+
+        pos = self._get_agent_location()
+        if pos is None:
+            return []
+
+        # Get from grid/space based on type
+        grid = getattr(self.model, "grid", None)
+        space = getattr(self.model, "space", None)
+
+        # Handle OrthogonalGrid (uses cells not positions)
+        # Use Mesa's built-in cached BFS via cell.get_neighborhood()
+        if (
+            hasattr(self, "cell")
+            and self.cell
+            and hasattr(self.cell, "get_neighborhood")
+        ):
+            neighborhood = self.cell.get_neighborhood(radius=int(self.vision))
+            return [
+                agent
+                for cell in neighborhood
+                for agent in cell.agents
+                if agent is not self
+            ]
+
+        # Handle standard grids with get_neighbors
+        if grid and hasattr(grid, "get_neighbors"):
+            with contextlib.suppress(Exception):
+                return grid.get_neighbors(
+                    pos, radius=int(self.vision), include_center=False
+                )
+
+        # Handle continuous space
+        if space and isinstance(space, ContinuousSpace):
+            with contextlib.suppress(Exception):
+                return space.get_neighbors(
+                    pos, radius=self.vision, include_center=False
+                )
+
+        return []
+
+    def _get_environmental_state(self) -> EnvironmentalState | None:
+        """Collect all environmental data."""
+        pos = self._get_agent_location()
+        if pos is None:
+            return None
+
+        current_cell = self._get_current_cell_data(pos)
+        visible_cells = self._get_visible_cells(pos)
+        statistics = self._calculate_statistics(current_cell, visible_cells)
+        global_env = self._get_global_environment()
+
+        return EnvironmentalState(
+            current_cell=current_cell,
+            visible_cells=visible_cells,
+            statistics=statistics,
+            global_environment=global_env,
+        )
+
+    def _get_current_cell_data(self, pos: tuple) -> dict:
+        """Get data about current cell."""
+        return {
+            "position": str(pos),
+            "properties": self._get_cell_properties(pos),
+            "objects": self._get_cell_objects(pos) if self.perceive_objects else [],
+            "navigable": self._is_cell_navigable(pos),
+            "agent_count": 1,  # Self
+        }
+
+    def _get_visible_cells(self, center_pos: tuple) -> dict[str, dict]:
+        """Get data about cells within vision."""
+        visible = {}
+
+        if self.vision is None or self.vision <= 0:
+            return visible
+
+        # Get cells in radius
+        cells = self._get_cells_in_radius(center_pos, self.vision)
+
+        # Limit and process
+        for i, cell_pos in enumerate(cells):
+            if i >= self.max_visible_cells:
+                break
+            if cell_pos == center_pos:
+                continue
+
+            distance, direction, bearing = self._calculate_spatial_info(
+                center_pos, cell_pos
+            )
+
+            visible[str(cell_pos)] = {
+                "distance": round(distance, 2),
+                "direction": direction,
+                "relative_bearing": round(bearing, 1),
+                "properties": self._get_cell_properties(cell_pos),
+                "objects": self._get_cell_objects(cell_pos)
+                if self.perceive_objects
+                else [],
+                "navigable": self._is_cell_navigable(cell_pos),
+                "agent_count": self._count_agents_at(cell_pos),
+            }
+
+        return visible
+
+    def _get_cells_in_radius(self, center: tuple, radius: float) -> list[tuple]:
+        """Get all cell positions within radius."""
+        cells = []
+        r = int(radius)
+
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                if (dx**2 + dy**2) ** 0.5 <= radius:
+                    cells.append((center[0] + dx, center[1] + dy))
+
+        return cells
+
+    def _get_cell_properties(self, pos: tuple) -> dict:
+        """Get PropertyLayer values at position."""
+        properties = {}
+
+        grid = getattr(self.model, "grid", None)
+        if not grid:
+            return properties
+
+        # Try modern API first (Mesa's standard public API)
+        if hasattr(grid, "properties"):
+            for name, layer in grid.properties.items():
+                if name == "empty":
+                    continue
+                try:
+                    # PropertyLayer with data attribute if it exists, else direct dict-like access
+                    value = layer.data[pos] if hasattr(layer, "data") else layer[pos]
+                    properties[name] = self._convert_property_value(value)
+                except (IndexError, KeyError, TypeError):
+                    properties[name] = None
+
+        return properties
+
+    def _convert_property_value(self, value):
+        """Convert numpy types to Python types."""
+        try:
+            import numpy as np
+
+            if isinstance(value, np.integer | np.floating):
+                return float(value)
+            if isinstance(value, np.bool_):
+                return bool(value)
+        except ImportError:
+            pass
+        return value
+
+    def _get_cell_objects(self, pos: tuple) -> list[dict]:
+        """Detect non-agent objects at position."""
+        objects = []
+
+        # Try model.objects dict
+        if hasattr(self.model, "objects"):
+            model_objects = self.model.objects
+            if isinstance(model_objects, dict):
+                objs_at_pos = model_objects.get(pos, [])
+                for obj in objs_at_pos:
+                    obj_data = self._object_to_dict(obj)
+                    if self._should_include_object(obj_data):
+                        objects.append(obj_data)
+
+        # Try cell.agents (filter out Agents)
+        cell = self._get_cell_at(pos)
+        if cell and hasattr(cell, "agents"):
+            for entity in cell.agents:
+                # Skip actual agents
+                if not isinstance(entity, Agent):
+                    obj_data = self._object_to_dict(entity)
+                    if self._should_include_object(obj_data):
+                        objects.append(obj_data)
+
+        return objects
+
+    def _get_cell_at(self, pos: tuple):
+        """Get cell object at position."""
+        grid = getattr(self.model, "grid", None)
+        if grid and hasattr(grid, "get_cell"):
+            with contextlib.suppress(Exception):
+                return grid.get_cell(pos)
+        return None
+
+    def _object_to_dict(self, obj) -> dict:
+        """Convert object to dictionary."""
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+
+        obj_dict = {"type": getattr(obj, "type", type(obj).__name__)}
+
+        # Common object attributes
+        for attr in [
+            "pickable",
+            "blocks_movement",
+            "state",
+            "id",
+            "value",
+            "nutrition",
+        ]:
+            if hasattr(obj, attr):
+                obj_dict[attr] = getattr(obj, attr)
+
+        return obj_dict
+
+    def _should_include_object(self, obj_data: dict) -> bool:
+        """Filter objects based on config."""
+        if self.perceive_objects is False:
+            return False
+        if self.perceive_objects == "all":
+            return True
+        if self.perceive_objects == "pickable":
+            return obj_data.get("pickable", False)
+        if self.perceive_objects == "static":
+            return not obj_data.get("pickable", False)
+        return True
+
+    def _is_cell_navigable(self, pos: tuple) -> bool:
+        """Check if cell can be moved to."""
+        grid = getattr(self.model, "grid", None)
+
+        # Check walkable property layer
+        if grid and hasattr(grid, "properties") and "walkable" in grid.properties:
+            try:
+                walkable_layer = grid.properties["walkable"]
+                if hasattr(walkable_layer, "data"):
+                    return bool(walkable_layer.data[pos])
+                else:
+                    return bool(walkable_layer[pos])
+            except (IndexError, KeyError):
+                pass
+
+        # Check cell is not blocked
+        cell = self._get_cell_at(pos)
+        if cell and hasattr(cell, "blocked"):
+            return not cell.blocked
+
+        # Default: assume navigable
+        return True
+
+    def _count_agents_at(self, pos: tuple) -> int:
+        """Count agents at position."""
+        count = 0
+        for agent in self.model.agents:
+            agent_pos = self._get_location_of(agent)
+            if agent_pos == pos:
+                count += 1
+        return count
+
+    def _calculate_spatial_info(self, from_pos: tuple, to_pos: tuple) -> tuple:
+        """Calculate distance, direction, and bearing."""
+        import math
+
+        dx = to_pos[0] - from_pos[0]
+        dy = to_pos[1] - from_pos[1]
+
+        distance = math.sqrt(dx**2 + dy**2)
+
+        # Cardinal direction
+        direction = self._get_cardinal_direction(dx, dy)
+
+        # Bearing (0=North, 90=East, 180=South, 270=West)
+        bearing = (math.degrees(math.atan2(dx, -dy)) + 360) % 360
+
+        return distance, direction, bearing
+
+    def _get_cardinal_direction(self, dx: int, dy: int) -> str:
+        """Convert delta to direction."""
+        if dx == 0 and dy == 0:
+            return "here"
+
+        # Normalize to -1, 0, 1
+        nx = 0 if dx == 0 else (1 if dx > 0 else -1)
+        ny = 0 if dy == 0 else (1 if dy > 0 else -1)
+
+        directions = {
+            (0, -1): "north",
+            (1, -1): "northeast",
+            (1, 0): "east",
+            (1, 1): "southeast",
+            (0, 1): "south",
+            (-1, 1): "southwest",
+            (-1, 0): "west",
+            (-1, -1): "northwest",
+        }
+
+        return directions.get((nx, ny), "unknown")
+
+    def _calculate_statistics(self, current_cell: dict, visible_cells: dict) -> dict:
+        """Calculate aggregate statistics."""
+        stats = {}
+
+        # Collect numeric properties
+        all_props = {}
+
+        # Add current cell properties
+        for prop, value in current_cell.get("properties", {}).items():
+            if isinstance(value, int | float) and value is not None:
+                all_props.setdefault(prop, []).append(value)
+
+        # Add visible cell properties
+        for cell_data in visible_cells.values():
+            for prop, value in cell_data.get("properties", {}).items():
+                if isinstance(value, int | float) and value is not None:
+                    all_props.setdefault(prop, []).append(value)
+
+        # Calculate stats for each property
+        for prop, values in all_props.items():
+            if values:
+                stats[prop] = {
+                    "max": max(values),
+                    "min": min(values),
+                    "avg": round(sum(values) / len(values), 2),
+                    "count": len(values),
+                }
+
+        # Agent count statistics
+        total_agents = current_cell.get("agent_count", 0)
+        for cell_data in visible_cells.values():
+            total_agents += cell_data.get("agent_count", 0)
+        stats["agent_count"] = {"total_visible": total_agents}
+
+        return stats
+
+    def _get_global_environment(self) -> dict:
+        """Get model-level environment variables."""
+        global_env = {}
+
+        # Try environment object
+        if hasattr(self.model, "environment"):
+            env = self.model.environment
+            if hasattr(env, "to_dict"):
+                global_env.update(env.to_dict())
+            elif isinstance(env, dict):
+                global_env.update(env)
+            else:
+                # Try to extract attributes
+                for attr in dir(env):
+                    if not attr.startswith("_"):
+                        with contextlib.suppress(Exception):
+                            global_env[attr] = getattr(env, attr)
+
+        # Try individual attributes
+        for attr in self.global_env_attributes:
+            if hasattr(self.model, attr) and attr not in global_env:
+                global_env[attr] = getattr(self.model, attr)
+
+        return global_env
 
     async def asend_message(self, message: str, recipients: list[Agent]) -> str:
         """
