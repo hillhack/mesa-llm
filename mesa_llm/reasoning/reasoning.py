@@ -1,9 +1,50 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mesa_llm.llm_agent import LLMAgent
+
+
+@dataclass
+class EnvironmentalState:
+    """
+    Environmental perception data for an agent.
+
+    Attributes:
+        current_cell (dict[str, Any] | None): Properties and state of the agent's current cell.
+            Contains:
+            - position: Agent's current position (stringified)
+            - properties: PropertyLayer values at this location
+            - objects: Non-agent entities at this location
+            - navigable: Whether the cell can be moved to
+            - agent_count: Number of agents at this cell
+
+        visible_cells (dict[str, dict[str, Any]] | None): Properties of cells within vision radius.
+            Dictionary where keys are stringified positions "(x, y)" and values contain:
+            - distance: Distance from agent
+            - direction: Cardinal direction (north, south, east, etc.)
+            - relative_bearing: Angle in degrees (0=North, 90=East, 180=South, 270=West)
+            - properties: PropertyLayer values
+            - objects: Non-agent entities
+            - navigable: Whether cell can be moved to
+            - agent_count: Number of agents at cell
+
+        statistics (dict[str, dict[str, float | int]] | None): Aggregate statistics for properties across visible cells.
+            Dictionary where keys are property names and values contain:
+            - max: Maximum value
+            - min: Minimum value
+            - avg: Average value
+            - count: Number of cells with this property
+
+        global_environment (dict[str, Any] | None): Model-level environmental variables.
+            Contains global state like weather, temperature, time_of_day, etc.
+    """
+
+    current_cell: dict[str, Any] | None = None
+    visible_cells: dict[str, dict[str, Any]] | None = None
+    statistics: dict[str, dict[str, float | int]] | None = None
+    global_environment: dict[str, Any] | None = None
 
 
 @dataclass
@@ -26,11 +67,16 @@ class Observation:
             - position of neighbors
             - Internal state or attributes of neighboring agents
 
+        environment_state (EnvironmentalState | None): Environmental perception data (optional).
+            See EnvironmentalState dataclass for field details.
+
     """
 
     step: int
     self_state: dict
     local_state: dict
+    environment_state: "EnvironmentalState | None" = None
+
 
 
 @dataclass
