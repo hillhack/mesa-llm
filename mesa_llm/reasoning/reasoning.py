@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -76,7 +76,6 @@ class Observation:
     self_state: dict
     local_state: dict
     environment_state: "EnvironmentalState | None" = None
-
 
 
 @dataclass

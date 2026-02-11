@@ -1,13 +1,7 @@
 from mesa.agent import Agent
-from mesa.discrete_space import (
-    OrthogonalMooreGrid,
-    OrthogonalVonNeumannGrid,
-)
 from mesa.model import Model
 from mesa.space import (
     ContinuousSpace,
-    MultiGrid,
-    SingleGrid,
 )
 
 from mesa_llm import Plan
@@ -87,8 +81,14 @@ class LLMAgent(Agent):
         self.perceive_objects = perceive_objects
         self.max_visible_cells = max_visible_cells
         self.global_env_attributes = global_env_attributes or [
-            'weather', 'season', 'time_of_day', 'temperature',
-            'day', 'hour', 'market_price', 'global_event'
+            "weather",
+            "season",
+            "time_of_day",
+            "temperature",
+            "day",
+            "hour",
+            "market_price",
+            "global_event",
         ]
 
     def __str__(self):
@@ -122,7 +122,7 @@ class LLMAgent(Agent):
     def generate_obs(self) -> Observation:
         """
         Generate comprehensive observation including environmental data.
-        
+
         Returns an Observation with:
         - step: Current simulation step
         - self_state: Agent's own state
@@ -130,7 +130,7 @@ class LLMAgent(Agent):
         - environmental_state: Environmental perception (if enabled)
         """
         step = self.model.steps
-        
+
         # Get self state
         self_state = {
             "agent_unique_id": self.unique_id,
@@ -138,15 +138,15 @@ class LLMAgent(Agent):
             "location": self._get_agent_location(),
             "internal_state": self.internal_state,
         }
-        
+
         # Get local agents (neighbors)
         local_state = self._get_local_state()
-        
+
         # Get environmental state
         environment_state = None
         if self.perceive_environment:
             environment_state = self._get_environmental_state()
-        
+
         # Add to memory
         self.memory.add_to_memory(
             type="observation",
@@ -156,7 +156,7 @@ class LLMAgent(Agent):
                 "environment_state": environment_state,
             },
         )
-        
+
         return Observation(
             step=step,
             self_state=self_state,
@@ -174,7 +174,7 @@ class LLMAgent(Agent):
 
     def _get_location_of(self, agent) -> tuple | None:
         """Get location of another agent."""
-        if hasattr(agent, 'pos') and agent.pos is not None:
+        if hasattr(agent, "pos") and agent.pos is not None:
             return agent.pos
         if hasattr(agent, "cell") and agent.cell is not None:
             return agent.cell.coordinate
@@ -184,77 +184,84 @@ class LLMAgent(Agent):
         """Get neighboring agents within vision."""
         neighbors = self._get_neighbors()
         local_state = {}
-        
+
         for agent in neighbors:
             key = f"{type(agent).__name__} {agent.unique_id}"
             local_state[key] = {
                 "position": self._get_location_of(agent),
                 "internal_state": [
-                    s for s in getattr(agent, 'internal_state', []) 
+                    s
+                    for s in getattr(agent, "internal_state", [])
                     if not str(s).startswith("_")
                 ],
             }
-        
+
         return local_state
 
     def _get_neighbors(self) -> list:
         """Get agents within vision radius."""
         if self.vision is None or self.vision == 0:
             return []
-        
+
         # Vision = -1 means all agents
         if self.vision == -1:
             return [a for a in self.model.agents if a is not self]
-        
+
         pos = self._get_agent_location()
         if pos is None:
             return []
-        
+
         # Get from grid/space based on type
         grid = getattr(self.model, "grid", None)
         space = getattr(self.model, "space", None)
-        
+
         # Handle OrthogonalGrid (uses cells not positions)
-        if hasattr(self, 'cell') and self.cell and hasattr(self.cell, 'neighborhood'):
+        if hasattr(self, "cell") and self.cell and hasattr(self.cell, "neighborhood"):
             # Get neighbors from cell connections using BFS
             neighbors = []
             radius = int(self.vision)
-            
+
             # BFS to get all cells within radius
             visited = {self.cell}
             queue = [(self.cell, 0)]
-            
+
             while queue:
                 current_cell, dist = queue.pop(0)
                 # Look at neighbors if within radius
                 if dist < radius:
-                    for neighbor_cell in current_cell.neighborhood:  # It's a property, not a method!
+                    for (
+                        neighbor_cell
+                    ) in current_cell.neighborhood:  # It's a property, not a method!
                         if neighbor_cell not in visited:
                             visited.add(neighbor_cell)
                             queue.append((neighbor_cell, dist + 1))
-                            
+
                             # Add agents from discovered neighbor cell
-                            if hasattr(neighbor_cell, 'agents'):
+                            if hasattr(neighbor_cell, "agents"):
                                 for agent in neighbor_cell.agents:
                                     if agent is not self:
                                         neighbors.append(agent)
-            
+
             return neighbors
-        
+
         # Handle standard grids with get_neighbors
-        if grid and hasattr(grid, 'get_neighbors'):
+        if grid and hasattr(grid, "get_neighbors"):
             try:
-                return grid.get_neighbors(pos, radius=int(self.vision), include_center=False)
+                return grid.get_neighbors(
+                    pos, radius=int(self.vision), include_center=False
+                )
             except:
                 pass
-        
+
         # Handle continuous space
         if space and isinstance(space, ContinuousSpace):
             try:
-                return space.get_neighbors(pos, radius=self.vision, include_center=False)
+                return space.get_neighbors(
+                    pos, radius=self.vision, include_center=False
+                )
             except:
                 pass
-        
+
         return []
 
     def _get_environmental_state(self) -> EnvironmentalState | None:
@@ -262,12 +269,12 @@ class LLMAgent(Agent):
         pos = self._get_agent_location()
         if pos is None:
             return None
-        
+
         current_cell = self._get_current_cell_data(pos)
         visible_cells = self._get_visible_cells(pos)
         statistics = self._calculate_statistics(current_cell, visible_cells)
         global_env = self._get_global_environment()
-        
+
         return EnvironmentalState(
             current_cell=current_cell,
             visible_cells=visible_cells,
@@ -288,58 +295,62 @@ class LLMAgent(Agent):
     def _get_visible_cells(self, center_pos: tuple) -> dict[str, dict]:
         """Get data about cells within vision."""
         visible = {}
-        
+
         if self.vision is None or self.vision <= 0:
             return visible
-        
+
         # Get cells in radius
         cells = self._get_cells_in_radius(center_pos, self.vision)
-        
+
         # Limit and process
         for i, cell_pos in enumerate(cells):
             if i >= self.max_visible_cells:
                 break
             if cell_pos == center_pos:
                 continue
-            
-            distance, direction, bearing = self._calculate_spatial_info(center_pos, cell_pos)
-            
+
+            distance, direction, bearing = self._calculate_spatial_info(
+                center_pos, cell_pos
+            )
+
             visible[str(cell_pos)] = {
                 "distance": round(distance, 2),
                 "direction": direction,
                 "relative_bearing": round(bearing, 1),
                 "properties": self._get_cell_properties(cell_pos),
-                "objects": self._get_cell_objects(cell_pos) if self.perceive_objects else [],
+                "objects": self._get_cell_objects(cell_pos)
+                if self.perceive_objects
+                else [],
                 "navigable": self._is_cell_navigable(cell_pos),
                 "agent_count": self._count_agents_at(cell_pos),
             }
-        
+
         return visible
 
     def _get_cells_in_radius(self, center: tuple, radius: float) -> list[tuple]:
         """Get all cell positions within radius."""
         cells = []
         r = int(radius)
-        
+
         for dx in range(-r, r + 1):
             for dy in range(-r, r + 1):
                 if dx == 0 and dy == 0:
                     continue
-                if (dx ** 2 + dy ** 2) ** 0.5 <= radius:
+                if (dx**2 + dy**2) ** 0.5 <= radius:
                     cells.append((center[0] + dx, center[1] + dy))
-        
+
         return cells
 
     def _get_cell_properties(self, pos: tuple) -> dict:
         """Get PropertyLayer values at position."""
         properties = {}
-        
+
         grid = getattr(self.model, "grid", None)
         if not grid:
             return properties
-        
+
         # Try modern API first (Mesa's standard public API)
-        if hasattr(grid, 'properties'):
+        if hasattr(grid, "properties"):
             for name, layer in grid.properties.items():
                 if name == "empty":
                     continue
@@ -353,13 +364,14 @@ class LLMAgent(Agent):
                     properties[name] = self._convert_property_value(value)
                 except (IndexError, KeyError, TypeError):
                     properties[name] = None
-        
+
         return properties
 
     def _convert_property_value(self, value):
         """Convert numpy types to Python types."""
         try:
             import numpy as np
+
             if isinstance(value, (np.integer, np.floating)):
                 return float(value)
             if isinstance(value, np.bool_):
@@ -371,9 +383,9 @@ class LLMAgent(Agent):
     def _get_cell_objects(self, pos: tuple) -> list[dict]:
         """Detect non-agent objects at position."""
         objects = []
-        
+
         # Try model.objects dict
-        if hasattr(self.model, 'objects'):
+        if hasattr(self.model, "objects"):
             model_objects = self.model.objects
             if isinstance(model_objects, dict):
                 objs_at_pos = model_objects.get(pos, [])
@@ -381,23 +393,23 @@ class LLMAgent(Agent):
                     obj_data = self._object_to_dict(obj)
                     if self._should_include_object(obj_data):
                         objects.append(obj_data)
-        
+
         # Try cell.agents (filter out Agents)
         cell = self._get_cell_at(pos)
-        if cell and hasattr(cell, 'agents'):
+        if cell and hasattr(cell, "agents"):
             for entity in cell.agents:
                 # Skip actual agents
                 if not isinstance(entity, Agent):
                     obj_data = self._object_to_dict(entity)
                     if self._should_include_object(obj_data):
                         objects.append(obj_data)
-        
+
         return objects
 
     def _get_cell_at(self, pos: tuple):
         """Get cell object at position."""
         grid = getattr(self.model, "grid", None)
-        if grid and hasattr(grid, 'get_cell'):
+        if grid and hasattr(grid, "get_cell"):
             try:
                 return grid.get_cell(pos)
             except:
@@ -406,16 +418,23 @@ class LLMAgent(Agent):
 
     def _object_to_dict(self, obj) -> dict:
         """Convert object to dictionary."""
-        if hasattr(obj, 'to_dict'):
+        if hasattr(obj, "to_dict"):
             return obj.to_dict()
-        
-        obj_dict = {"type": getattr(obj, 'type', type(obj).__name__)}
-        
+
+        obj_dict = {"type": getattr(obj, "type", type(obj).__name__)}
+
         # Common object attributes
-        for attr in ['pickable', 'blocks_movement', 'state', 'id', 'value', 'nutrition']:
+        for attr in [
+            "pickable",
+            "blocks_movement",
+            "state",
+            "id",
+            "value",
+            "nutrition",
+        ]:
             if hasattr(obj, attr):
                 obj_dict[attr] = getattr(obj, attr)
-        
+
         return obj_dict
 
     def _should_include_object(self, obj_data: dict) -> bool:
@@ -433,24 +452,24 @@ class LLMAgent(Agent):
     def _is_cell_navigable(self, pos: tuple) -> bool:
         """Check if cell can be moved to."""
         grid = getattr(self.model, "grid", None)
-        
+
         # Check walkable property layer
         if grid and hasattr(grid, "properties"):
             if "walkable" in grid.properties:
                 try:
                     walkable_layer = grid.properties["walkable"]
-                    if hasattr(walkable_layer, 'data'):
+                    if hasattr(walkable_layer, "data"):
                         return bool(walkable_layer.data[pos])
                     else:
                         return bool(walkable_layer[pos])
                 except (IndexError, KeyError):
                     pass
-        
+
         # Check cell is not blocked
         cell = self._get_cell_at(pos)
-        if cell and hasattr(cell, 'blocked'):
+        if cell and hasattr(cell, "blocked"):
             return not cell.blocked
-        
+
         # Default: assume navigable
         return True
 
@@ -466,60 +485,60 @@ class LLMAgent(Agent):
     def _calculate_spatial_info(self, from_pos: tuple, to_pos: tuple) -> tuple:
         """Calculate distance, direction, and bearing."""
         import math
-        
+
         dx = to_pos[0] - from_pos[0]
         dy = to_pos[1] - from_pos[1]
-        
-        distance = math.sqrt(dx ** 2 + dy ** 2)
-        
+
+        distance = math.sqrt(dx**2 + dy**2)
+
         # Cardinal direction
         direction = self._get_cardinal_direction(dx, dy)
-        
+
         # Bearing (0=North, 90=East, 180=South, 270=West)
         bearing = (math.degrees(math.atan2(dx, -dy)) + 360) % 360
-        
+
         return distance, direction, bearing
 
     def _get_cardinal_direction(self, dx: int, dy: int) -> str:
         """Convert delta to direction."""
         if dx == 0 and dy == 0:
             return "here"
-        
+
         # Normalize to -1, 0, 1
         nx = 0 if dx == 0 else (1 if dx > 0 else -1)
         ny = 0 if dy == 0 else (1 if dy > 0 else -1)
-        
+
         directions = {
-            (0, -1): "north", 
-            (1, -1): "northeast", 
+            (0, -1): "north",
+            (1, -1): "northeast",
             (1, 0): "east",
-            (1, 1): "southeast", 
-            (0, 1): "south", 
+            (1, 1): "southeast",
+            (0, 1): "south",
             (-1, 1): "southwest",
-            (-1, 0): "west", 
+            (-1, 0): "west",
             (-1, -1): "northwest",
         }
-        
+
         return directions.get((nx, ny), "unknown")
 
     def _calculate_statistics(self, current_cell: dict, visible_cells: dict) -> dict:
         """Calculate aggregate statistics."""
         stats = {}
-        
+
         # Collect numeric properties
         all_props = {}
-        
+
         # Add current cell properties
         for prop, value in current_cell.get("properties", {}).items():
             if isinstance(value, (int, float)) and value is not None:
                 all_props.setdefault(prop, []).append(value)
-        
+
         # Add visible cell properties
         for cell_data in visible_cells.values():
             for prop, value in cell_data.get("properties", {}).items():
                 if isinstance(value, (int, float)) and value is not None:
                     all_props.setdefault(prop, []).append(value)
-        
+
         # Calculate stats for each property
         for prop, values in all_props.items():
             if values:
@@ -527,44 +546,43 @@ class LLMAgent(Agent):
                     "max": max(values),
                     "min": min(values),
                     "avg": round(sum(values) / len(values), 2),
-                    "count": len(values)
+                    "count": len(values),
                 }
-        
+
         # Agent count statistics
         total_agents = current_cell.get("agent_count", 0)
         for cell_data in visible_cells.values():
             total_agents += cell_data.get("agent_count", 0)
         stats["agent_count"] = {"total_visible": total_agents}
-        
+
         return stats
 
     def _get_global_environment(self) -> dict:
         """Get model-level environment variables."""
         global_env = {}
-        
+
         # Try environment object
-        if hasattr(self.model, 'environment'):
+        if hasattr(self.model, "environment"):
             env = self.model.environment
-            if hasattr(env, 'to_dict'):
+            if hasattr(env, "to_dict"):
                 global_env.update(env.to_dict())
             elif isinstance(env, dict):
                 global_env.update(env)
             else:
                 # Try to extract attributes
                 for attr in dir(env):
-                    if not attr.startswith('_'):
+                    if not attr.startswith("_"):
                         try:
                             global_env[attr] = getattr(env, attr)
                         except:
                             pass
-        
+
         # Try individual attributes
         for attr in self.global_env_attributes:
             if hasattr(self.model, attr) and attr not in global_env:
                 global_env[attr] = getattr(self.model, attr)
-        
-        return global_env
 
+        return global_env
 
     def send_message(self, message: str, recipients: list[Agent]) -> str:
         """

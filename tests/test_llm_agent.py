@@ -351,50 +351,48 @@ def test_generate_obs_with_orthogonal_grid(basic_model, disable_memory):
 
 # Environmental Perception Tests
 
+
 def test_generate_obs_with_environment_perception(grid_model, disable_memory):
     """Test that environmental perception works with PropertyLayers."""
     try:
-        from mesa.experimental.cell_space import PropertyLayer
         import numpy as np
-        
+        from mesa.experimental.cell_space import PropertyLayer
+
         # Add PropertyLayer to grid
         grid_model.grid.properties = {
-            'sugar': PropertyLayer(name='sugar', width=10, height=10, default_value=0)
+            "sugar": PropertyLayer(name="sugar", width=10, height=10, default_value=0)
         }
-        grid_model.grid.properties['sugar'].data = np.random.randint(0, 10, size=(10, 10))
-        
+        grid_model.grid.properties["sugar"].data = np.random.randint(
+            0, 10, size=(10, 10)
+        )
+
         agent = LLMAgent.create_agents(
-            grid_model,
-            n=1,
-            vision=2,
-            perceive_environment=True,
-    
-            **DEFAULT_AGENT_CONFIG
+            grid_model, n=1, vision=2, perceive_environment=True, **DEFAULT_AGENT_CONFIG
         )[0]
-        
+
         agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
         grid_model.grid.place_agent(agent, (5, 5))
-        
+
         disable_memory(agent)
         obs = agent.generate_obs()
-        
+
         # Check environment_state exists and is EnvironmentalState instance
         assert obs.environment_state is not None
         assert obs.environment_state.current_cell is not None
-        assert 'properties' in obs.environment_state.current_cell
-        assert 'sugar' in obs.environment_state.current_cell['properties']
-        
+        assert "properties" in obs.environment_state.current_cell
+        assert "sugar" in obs.environment_state.current_cell["properties"]
+
         # Check visible cells
         assert obs.environment_state.visible_cells is not None
         assert len(obs.environment_state.visible_cells) > 0
-        
+
         # Check statistics
         assert obs.environment_state.statistics is not None
-        assert 'sugar' in obs.environment_state.statistics
-        assert 'max' in obs.environment_state.statistics['sugar']
-        assert 'min' in obs.environment_state.statistics['sugar']
-        assert 'avg' in obs.environment_state.statistics['sugar']
-        
+        assert "sugar" in obs.environment_state.statistics
+        assert "max" in obs.environment_state.statistics["sugar"]
+        assert "min" in obs.environment_state.statistics["sugar"]
+        assert "avg" in obs.environment_state.statistics["sugar"]
+
     except ImportError:
         # PropertyLayer not available in this Mesa version
         pytest.skip("PropertyLayer not available")
@@ -407,15 +405,15 @@ def test_generate_obs_without_environment_perception(grid_model, disable_memory)
         n=1,
         vision=2,
         perceive_environment=False,  # Disabled (default)
-        **DEFAULT_AGENT_CONFIG
+        **DEFAULT_AGENT_CONFIG,
     )[0]
-    
+
     agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
     grid_model.grid.place_agent(agent, (5, 5))
-    
+
     disable_memory(agent)
     obs = agent.generate_obs()
-    
+
     # Should have None environment_state when disabled
     assert obs.environment_state is None
 
@@ -423,45 +421,45 @@ def test_generate_obs_without_environment_perception(grid_model, disable_memory)
 def test_environment_statistics(grid_model, disable_memory):
     """Test that property statistics are calculated correctly."""
     try:
-        from mesa.experimental.cell_space import PropertyLayer
         import numpy as np
-        
+        from mesa.experimental.cell_space import PropertyLayer
+
         # Create known sugar distribution
         sugar_data = np.zeros((10, 10))
         sugar_data[5, 6] = 10.0  # Max sugar to the east
-        sugar_data[5, 4] = 2.0   # Min sugar to the west
-        sugar_data[6, 5] = 5.0   # Some sugar to the south
-        
+        sugar_data[5, 4] = 2.0  # Min sugar to the west
+        sugar_data[6, 5] = 5.0  # Some sugar to the south
+
         grid_model.grid.properties = {
-            'sugar': PropertyLayer(name='sugar', width=10, height=10, default_value=0)
+            "sugar": PropertyLayer(name="sugar", width=10, height=10, default_value=0)
         }
-        grid_model.grid.properties['sugar'].data = sugar_data
-        
+        grid_model.grid.properties["sugar"].data = sugar_data
+
         agent = LLMAgent.create_agents(
             grid_model,
             n=1,
             vision=2,
             perceive_environment=True,
-            perceive_properties=['sugar'],
+            perceive_properties=["sugar"],
             include_statistics=True,
-            **DEFAULT_AGENT_CONFIG
+            **DEFAULT_AGENT_CONFIG,
         )[0]
-        
+
         agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
         grid_model.grid.place_agent(agent, (5, 5))
-        
+
         disable_memory(agent)
         obs = agent.generate_obs()
-        
+
         # Check statistics
         assert obs.environment_state is not None
         assert obs.environment_state.statistics is not None
-        assert 'sugar' in obs.environment_state.statistics
-        
-        stats = obs.environment_state.statistics['sugar']
-        assert stats['max'] == 10.0
-        assert stats['best_location'] == (5, 6)
-        
+        assert "sugar" in obs.environment_state.statistics
+
+        stats = obs.environment_state.statistics["sugar"]
+        assert stats["max"] == 10.0
+        assert stats["best_location"] == (5, 6)
+
     except ImportError:
         pytest.skip("PropertyLayer not available")
 
@@ -474,15 +472,15 @@ def test_max_cells_reported_limit(grid_model, disable_memory):
         vision=5,  # Large vision (would see many cells)
         perceive_environment=True,
         max_visible_cells=5,  # But limit to 5 cells
-        **DEFAULT_AGENT_CONFIG
+        **DEFAULT_AGENT_CONFIG,
     )[0]
-    
+
     agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
     grid_model.grid.place_agent(agent, (5, 5))
-    
+
     disable_memory(agent)
     obs = agent.generate_obs()
-    
+
     # Should have at most 5 visible cells
     assert obs.environment_state is not None
     visible_cells = obs.environment_state.visible_cells or {}
@@ -495,61 +493,55 @@ def test_global_environment_perception(basic_model, disable_memory):
     # Add global environment variables to model
     basic_model.weather = "sunny"
     basic_model.temperature = 25.5
-    
-    agent = LLMAgent.create_agents(
-        basic_model,
-        n=1,
-        perceive_environment=True,
 
-        **DEFAULT_AGENT_CONFIG
+    agent = LLMAgent.create_agents(
+        basic_model, n=1, perceive_environment=True, **DEFAULT_AGENT_CONFIG
     )[0]
-    
+
     agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
-    
+
     disable_memory(agent)
     obs = agent.generate_obs()
-    
+
     # Check environment_state exists
     # Since agent doesn't have a position in basic_model, environment_state will be None
     # (perceive_environment requires position)
     # Let's just verify the attribute exists and is either None or EnvironmentalState
     from mesa_llm.reasoning.reasoning import EnvironmentalState
-    assert hasattr(obs, 'environment_state')
-    assert obs.environment_state is None or isinstance(obs.environment_state, EnvironmentalState)
+
+    assert hasattr(obs, "environment_state")
+    assert obs.environment_state is None or isinstance(
+        obs.environment_state, EnvironmentalState
+    )
 
 
 def test_distance_direction_calculation(grid_model, disable_memory):
     """Test that distance and direction are calculated correctly."""
     try:
-        from mesa.experimental.cell_space import PropertyLayer
         import numpy as np
-        
+        from mesa.experimental.cell_space import PropertyLayer
+
         grid_model.grid.properties = {
-            'test': PropertyLayer(name='test', width=10, height=10, default_value=1)
+            "test": PropertyLayer(name="test", width=10, height=10, default_value=1)
         }
-        
+
         agent = LLMAgent.create_agents(
-            grid_model,
-            n=1,
-            vision=2,
-            perceive_environment=True,
-    
-            **DEFAULT_AGENT_CONFIG
+            grid_model, n=1, vision=2, perceive_environment=True, **DEFAULT_AGENT_CONFIG
         )[0]
-        
+
         agent.memory = ShortTermMemory(agent=agent, n=5, display=True)
         grid_model.grid.place_agent(agent, (5, 5))
-        
+
         disable_memory(agent)
         obs = agent.generate_obs()
-        
+
         # Check that visible cells have distance and direction
         if obs.environment_state and obs.environment_state.visible_cells:
             for cell_key, cell_data in obs.environment_state.visible_cells.items():
-                assert 'distance' in cell_data
-                assert 'direction' in cell_data
-                assert isinstance(cell_data['distance'], (int, float))
-                assert isinstance(cell_data['direction'], str)
-        
+                assert "distance" in cell_data
+                assert "direction" in cell_data
+                assert isinstance(cell_data["distance"], (int, float))
+                assert isinstance(cell_data["direction"], str)
+
     except ImportError:
         pytest.skip("PropertyLayer not available")
