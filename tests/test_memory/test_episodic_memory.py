@@ -1,6 +1,6 @@
 import json
 from collections import deque
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -22,6 +22,7 @@ def mock_agent():
     agent.llm.generate.return_value = mock_response
 
     agent.model.steps = 100
+    agent.model.events = []
     return agent
 
 
@@ -122,3 +123,137 @@ class TestEpisodicMemory:
 
         # Entry C (score -6) should be omitted
         assert "C" not in [e.content["id"] for e in top_entries]
+
+    def test_process_step_pre_step(self, mock_agent):
+        """
+        The process_step function in the episodic_memory when called with 'pre_step=True' takes whatever is already inside the step_content,
+        then calls the add_to_memory function and then clears the step_content.
+
+        This test function performs the following 2 tests,
+            - Checks whether the add_to_memory function is called correctly when 'pre_step=True.'
+            - Also performs a final check to ensure the step_content is cleared.
+        """
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+
+        # Pre-populate step_content
+        memory.step_content = {"observation": {"data": "test"}}
+
+        # Spy on add_to_memory and call the process step with param as True
+        memory.add_to_memory = MagicMock()
+        memory.process_step(pre_step=True)
+
+        # Checks if add_to_memory was called once
+        memory.add_to_memory.assert_called_once_with(
+            type="observation",
+            content={"observation": {"data": "test"}},
+        )
+
+        # checks whether the step_content is cleared at the end
+        assert memory.step_content == {}
+
+    @pytest.mark.asyncio
+    async def test_aprocess_step_pre_step(self, mock_agent):
+        """
+        Asynchronous version of the 'test_process_step_pre_step'
+        Implements the same checks as the sync counterpart function but in an async manner.
+            - checks whether aadd_to_memory function was called correctly
+            - checks whether the step_content was cleared correctly at the end
+        """
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+
+        memory.step_content = {"observation": {"data": "test"}}
+        memory.aadd_to_memory = AsyncMock()
+
+        await memory.aprocess_step(pre_step=True)
+
+        #
+        memory.aadd_to_memory.assert_awaited_once_with(
+            type="observation",
+            content={"observation": {"data": "test"}},
+        )
+
+        assert memory.step_content == {}
+
+    @pytest.mark.asyncio
+    async def test_async_add_memory_entry(self, mock_agent):
+        """
+        The aadd_to_memory function assigns an 'importance' value to the content and then calls the add_to_memory function
+
+        The test function does the following
+            - mocks the llm to produece a pre-determined grading.
+            - then calls the aad_to_memory function
+            - checks to ensure that the step_content is not empty as the aadd_to_memory function will have added entries into it.
+        """
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content=json.dumps({"grade": 3})))
+        ]
+
+        # Assigns the mock response
+        mock_agent.llm.agenerate = AsyncMock(return_value=mock_response)
+
+        # adds content into the memory using the async counter part of add_to_memory function
+        await memory.aadd_to_memory("observation", {"content": "Test content"})
+        await memory.aadd_to_memory("planning", {"plan": "Test plan"})
+        await memory.aadd_to_memory("action", {"action": "Test action"})
+
+        # checks to ensure that step content is not empty
+        assert memory.step_content != {}
+
+    def test_build_grade_prompt_no_previous_entries(self, mock_agent):
+        """
+        The _build_grade_prompt function inserts 'No previous memory entries this message if there are no entries passed to it.
+
+        This test function checks to see if this fall-back indeed works correctly
+            - No memory entries are added before the _build_grade_prompt function call
+            - So when the memory is empty we expect to see 'No previous memory entries' in the returned prompt.
+        """
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+
+        prompt = memory._build_grade_prompt("observation", {"data": "test"})
+
+        # checks if the fallback condition actaually works
+        assert "No previous memory entries" in prompt
+        assert "observation" in prompt
+
+    def test_get_communication_history(self, mock_agent):
+        """
+        Return a formatted string of all messages stored in memory.
+
+        This function:
+        - Looks through all memory entries
+        - Selects only entries that contain a "message" field
+        - Formats each message as: "step <step_number>: <message>"
+        - Combines them into one single string
+
+        Returns:
+            str: A string containing all communication messages
+                from memory, separated by new lines.
+        """
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+
+        entry_with_message = MemoryEntry(
+            content={"importance": 3, "message": "Hello"},
+            step=1,
+            agent=mock_agent,
+        )
+
+        entry_without_message = MemoryEntry(
+            content={"importance": 2, "data": "No message here"},
+            step=2,
+            agent=mock_agent,
+        )
+
+        memory.memory_entries.append(entry_with_message)
+        memory.memory_entries.append(entry_without_message)
+
+        history = memory.get_communication_history()
+
+        # assertion checks must return true
+        assert "Hello" in history
+        assert "step 1" in history
+        assert (
+            "No message here" not in history
+        )  # step 2  does not have message field thus it must not be present in the returned string

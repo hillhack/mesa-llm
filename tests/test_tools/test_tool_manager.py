@@ -666,3 +666,52 @@ class TestToolManager:
 
         assert len(schemas_1) == len(schemas_2) == 1
         assert schemas_1[0]["function"]["name"] == schemas_2[0]["function"]["name"]
+
+    @pytest.mark.asyncio
+    async def test_acall_tools_success(self, monkeypatch):
+        """
+        This test validates the full async tool execution pipeline by ensuring that:
+
+        - Tool calls are correctly extracted from the LLM response object.
+        - JSON-formatted arguments are parsed without error.
+        - The `agent` parameter is automatically injected when required by the tool's function signature.
+        - The tool function is executed successfully.
+        - The result is wrapped in the expected structured response format:
+            {
+                "tool_call_id": <tool_call_id>,
+                "role": "tool",
+                "name": <tool_name>,
+                "response": <stringified_result>
+            }
+        - The asynchronous execution path using `asyncio.gather`
+        returns the correct results.
+        """
+        manager = ToolManager()
+        mock_agent = Mock()
+
+        @tool
+        def async_test_tool(agent, value: str) -> str:
+            """Async test tool.
+
+            Args:
+                agent: The agent making the request (provided automatically)
+                value: Input value.
+
+            Returns:
+                Processed value.
+            """
+            return f"Async: {value}"
+
+        mock_tool_call = Mock()
+        mock_tool_call.id = "call_async"
+        mock_tool_call.function.name = "async_test_tool"
+        mock_tool_call.function.arguments = '{"value": "hello"}'
+
+        mock_response = Mock()
+        mock_response.tool_calls = [mock_tool_call]
+
+        result = await manager.acall_tools(mock_agent, mock_response)
+
+        assert len(result) == 1
+        assert result[0]["tool_call_id"] == "call_async"
+        assert "Async: hello" in result[0]["response"]

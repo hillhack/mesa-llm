@@ -2,6 +2,7 @@
 
 import re
 
+import pytest
 from mesa.model import Model
 from mesa.space import MultiGrid
 
@@ -178,3 +179,142 @@ def test_send_message_updates_both_agents_memory(monkeypatch):
 
     # sender + recipient memory => should be called twice
     assert call_counter["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_aapply_plan_adds_to_memory(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+
+    class DummyModel(Model):
+        def __init__(self):
+            super().__init__(seed=42)
+            self.grid = MultiGrid(3, 3, torus=False)
+
+        def add_agent(self, pos):
+            system_prompt = "You are an agent in a simulation."
+            agents = LLMAgent.create_agents(
+                self,
+                n=1,
+                reasoning=ReActReasoning,
+                system_prompt=system_prompt,
+                vision=-1,
+                internal_state=["test_state"],
+            )
+
+            x, y = pos
+            self.grid.place_agent(agents[0], (x, y))
+            return agents[0]
+
+    model = DummyModel()
+    agent = model.add_agent((1, 1))
+
+    # optional: you can replace with async memory stub
+    async def fake_aadd_to_memory(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(agent.memory, "aadd_to_memory", fake_aadd_to_memory)
+
+    # fake async tool response
+    fake_response = [{"tool": "foo", "argument": "bar"}]
+
+    async def fake_acall_tools(agent, llm_response):
+        return fake_response
+
+    monkeypatch.setattr(agent.tool_manager, "acall_tools", fake_acall_tools)
+
+    plan = Plan(step=0, llm_plan="do something")
+
+    resp = await agent.aapply_plan(plan)
+
+    assert resp == fake_response
+
+
+@pytest.mark.asyncio
+async def test_agenerate_obs_with_one_neighbor(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+
+    class DummyModel(Model):
+        def __init__(self):
+            super().__init__(seed=45)
+            self.grid = MultiGrid(3, 3, torus=False)
+
+        def add_agent(self, pos):
+            agents = LLMAgent.create_agents(
+                self,
+                n=1,
+                reasoning=ReActReasoning,
+                system_prompt="You are an agent.",
+                vision=-1,
+                internal_state=["test_state"],
+            )
+            x, y = pos
+            self.grid.place_agent(agents[0], (x, y))
+            return agents[0]
+
+    model = DummyModel()
+
+    agent = model.add_agent((1, 1))
+    neighbor = model.add_agent((1, 2))
+
+    agent.unique_id = 1
+    neighbor.unique_id = 2
+
+    async def fake_aadd_to_memory(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(agent.memory, "aadd_to_memory", fake_aadd_to_memory)
+
+    obs = await agent.agenerate_obs()
+
+    assert obs.self_state["agent_unique_id"] == 1
+    assert len(obs.local_state) == 1
+
+    key = next(iter(obs.local_state.keys()))
+    assert key == "LLMAgent 2"
+
+    entry = obs.local_state[key]
+    assert entry["position"] == (1, 2)
+    assert entry["internal_state"] == ["test_state"]
+
+
+@pytest.mark.asyncio
+async def test_async_wrapper_calls_pre_and_post(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+
+    class CustomAgent(LLMAgent):
+        async def astep(self):
+            self.user_called = True
+            return "done"
+
+    class DummyModel(Model):
+        def __init__(self):
+            super().__init__(seed=1)
+            self.grid = MultiGrid(3, 3, torus=False)
+
+    model = DummyModel()
+
+    agent = CustomAgent.create_agents(
+        model,
+        n=1,
+        reasoning=lambda agent: None,
+        system_prompt="test",
+        vision=-1,
+        internal_state=[],
+    )[0]
+
+    calls = {"pre": 0, "post": 0}
+
+    async def fake_aprocess_step(pre_step=False):
+        if pre_step:
+            calls["pre"] += 1
+        else:
+            calls["post"] += 1
+
+    monkeypatch.setattr(agent.memory, "aprocess_step", fake_aprocess_step)
+
+    result = await agent.astep()
+
+    assert result == "done"
+    assert calls["pre"] == 1
+    assert calls["post"] == 1
+    assert agent.user_called is True

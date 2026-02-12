@@ -1,3 +1,5 @@
+import asyncio
+import concurrent.futures
 import inspect
 import json
 from collections.abc import Callable
@@ -67,129 +69,117 @@ class ToolManager:
     def has_tool(self, name: str) -> bool:
         return name in self.tools
 
-    def call_tools(self, agent: "LLMAgent", llm_response: Any) -> list[dict]:
+    async def _process_tool_call(
+        self, agent: "LLMAgent", tool_call: Any, index: int
+    ) -> dict:
         """
-        Calls the tools, recommended by the LLM. If the tool has an output it returns the name of the tool and the output else, it returns the name
-        and output as successfully executed.
-
-        Args:
-            llm_response: The raw response from the LLM.
-
-        Returns:
-            A list of tool results
+        Internal helper to process a single tool call consistently.
+        Supports both synchronous and asynchronous tool functions.
         """
+
+        # Safe extraction
+        function_obj = getattr(tool_call, "function", None)
+        function_name = getattr(function_obj, "name", "unknown")
+        tool_call_id = getattr(tool_call, "id", "unknown")
+        raw_args = getattr(function_obj, "arguments", "{}")
 
         try:
-            # Extract response message and tool calls
-            tool_calls = llm_response.tool_calls
-
-            # Check if tool_calls exists and is not None
-            if not tool_calls:
-                sprint("No tool calls in LLM response", color="red")
-                return []
-
-            tool_results = []
-
-            # Process each tool call
-            for i, tool_call in enumerate(tool_calls):
-                try:
-                    # Extract function details
-                    function_name = tool_call.function.name
-                    function_args_str = tool_call.function.arguments
-                    tool_call_id = tool_call.id
-
-                    # Validate function exists in tool_manager
-                    if function_name not in self.tools:
-                        raise ValueError(
-                            style(
-                                f"Function '{function_name}' not found in ToolManager",
-                                color="red",
-                            )
-                        )
-
-                    # Parse function arguments
-                    try:
-                        function_args = json.loads(function_args_str)
-                    except json.JSONDecodeError as e:
-                        raise json.JSONDecodeError(
-                            style(
-                                f"Invalid JSON in function arguments: {e}", color="red"
-                            )
-                        ) from e
-
-                    # Get the actual function to call from tool_manager
-                    function_to_call = self.tools[function_name]
-
-                    # Call the function with unpacked arguments
-                    try:
-                        function_response = function_to_call(
-                            agent=agent, **function_args
-                        )
-                    except TypeError as e:
-                        # If function arguments don't match function signature :
-                        sprint(
-                            f"Warning: Function call failed with TypeError: {e}",
-                            color="yellow",
-                        )
-                        sprint(
-                            "Attempting to call with filtered arguments...",
-                            color="yellow",
-                        )
-
-                        # Try to filter arguments to match function signature
-
-                        sig = inspect.signature(function_to_call)
-                        expects_agent = "agent" in sig.parameters
-                        filtered_args = {
-                            k: v
-                            for k, v in function_args.items()
-                            if k in sig.parameters
-                        }
-
-                        if expects_agent:
-                            function_response = function_to_call(
-                                agent=agent, **filtered_args
-                            )
-                        else:
-                            function_response = function_to_call(**filtered_args)
-
-                    if not function_response:
-                        function_response = f"{function_name} executed successfully"
-
-                    # Create tool result message
-                    tool_result = {
-                        "tool_call_id": tool_call_id,
-                        "role": "tool",
-                        "name": function_name,
-                        "response": str(function_response),
-                    }
-
-                    tool_results.append(tool_result)
-
-                except Exception as e:
-                    # Handle individual tool call errors
-                    sprint(
-                        f"Error executing tool call {i + 1} ({function_name}): {e!s}",
+            # Validate tool existence
+            if function_name not in self.tools:
+                raise ValueError(
+                    style(
+                        f"Function '{function_name}' not found in ToolManager",
                         color="red",
                     )
+                )
 
-                    # Create error response
-                    error_result = {
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": function_name,
-                        "response": f"Error: {e!s}",
-                    }
+            # Parse JSON arguments safely
+            try:
+                function_args = json.loads(raw_args or "{}")
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    style(f"Invalid JSON in function arguments: {e}", color="red")
+                ) from e
 
-                    tool_results.append(error_result)
-            return tool_results
+            function_to_call = self.tools[function_name]
 
-        except AttributeError as e:
-            sprint(f"Error accessing LLM response structure: {e}", color="red")
-            return []
+            # Inspect signature BEFORE calling
+            sig = inspect.signature(function_to_call)
+            expects_agent = "agent" in sig.parameters
+
+            # Filter arguments to only those accepted
+            filtered_args = {
+                k: v for k, v in function_args.items() if k in sig.parameters
+            }
+
+            if expects_agent:
+                filtered_args["agent"] = agent
+
+            # Execute (sync or async)
+            if inspect.iscoroutinefunction(function_to_call):
+                function_response = await function_to_call(**filtered_args)
+            else:
+                function_response = function_to_call(**filtered_args)
+
+            # Only treat None as empty
+            if function_response is None:
+                function_response = f"{function_name} executed successfully"
+
+            return {
+                "tool_call_id": tool_call_id,
+                "role": "tool",
+                "name": function_name,
+                "response": str(function_response),
+            }
+
         except Exception as e:
-            sprint(f"Unexpected error in call_tools: {e}", color="red")
+            sprint(
+                f"Error executing tool call {index + 1} ({function_name}): {e!s}",
+                color="red",
+            )
+            return {
+                "tool_call_id": tool_call_id,
+                "role": "tool",
+                "name": function_name,
+                "response": f"Error: {e!s}",
+            }
+
+    def call_tools(self, agent: "LLMAgent", llm_response: Any) -> list[dict]:
+        """
+        Synchronous tool execution with safe async bridge.
+        """
+
+        tool_calls = getattr(llm_response, "tool_calls", [])
+        if not tool_calls:
             return []
+
+        async def _run_all():
+            tasks = [
+                self._process_tool_call(agent, tc, i) for i, tc in enumerate(tool_calls)
+            ]
+            return await asyncio.gather(*tasks)
+
+        try:
+            return asyncio.run(_run_all())
+        except RuntimeError:
+            # Fallback if event loop already running
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                return executor.submit(lambda: asyncio.run(_run_all())).result()
+
+    async def acall_tools(self, agent: "LLMAgent", llm_response: Any) -> list[dict]:
+        """
+        Asynchronous tool execution (parallel via asyncio.gather).
+        """
+
+        tool_calls = getattr(llm_response, "tool_calls", [])
+        if not tool_calls:
+            return []
+
+        tasks = [
+            self._process_tool_call(agent, tc, i) for i, tc in enumerate(tool_calls)
+        ]
+
+        return await asyncio.gather(*tasks)
 
 
 # Register callback to automatically add new tools to all ToolManager instances

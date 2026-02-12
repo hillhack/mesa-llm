@@ -35,7 +35,7 @@ class ShortTermMemory(Memory):
         """
         Asynchronous version of process_step
         """
-        return self.process_step(pre_step)
+        return self.process_step(pre_step=pre_step)
 
     def process_step(self, pre_step: bool = False):
         """

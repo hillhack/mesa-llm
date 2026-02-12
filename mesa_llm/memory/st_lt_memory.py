@@ -102,12 +102,12 @@ class STLTMemory(Memory):
         """
         # Add the new entry to the short term memory
         if pre_step:
-            placeholder = MemoryEntry(
+            new_entry = MemoryEntry(
                 agent=self.agent,
                 content=self.step_content,
                 step=None,
             )
-            self.short_term_memory.append(placeholder)
+            self.short_term_memory.append(new_entry)
             self.step_content = {}
             return None, False
         if not self.short_term_memory or self.short_term_memory[-1].step is not None:
