@@ -145,13 +145,12 @@ class LLMAgent(Agent):
 
     def _build_observation(self):
         """
-        Generate comprehensive observation including environmental data.
+        Construct the observation data visible to the agent at the current model step.
 
-        Returns an Observation with:
-        - step: Current simulation step
-        - self_state: Agent's own state
-        - local_state: Nearby agents
-        - environmental_state: Environmental perception (if enabled)
+        Builds self_state, local_state, and environmental_state (if enabled).
+        Does NOT write to memory — callers (generate_obs / agenerate_obs) handle that.
+
+        Returns an Observation instance.
         """
         step = self.model.steps
 
@@ -171,22 +170,47 @@ class LLMAgent(Agent):
         if self.perceive_environment:
             environment_state = self._get_environmental_state()
 
-        # Add to memory
-        self.memory.add_to_memory(
-            type="observation",
-            content={
-                "self_state": self_state,
-                "local_state": local_state,
-                "environment_state": environment_state,
-            },
-        )
-
         return Observation(
             step=step,
             self_state=self_state,
             local_state=local_state,
             environment_state=environment_state,
         )
+
+    def generate_obs(self) -> Observation:
+        """
+        Generate a comprehensive observation of the agent's current environment.
+
+        Builds self_state, local_state, and environmental_state, stores the
+        observation in memory, and returns it as an Observation instance.
+        """
+        obs = self._build_observation()
+        self.memory.add_to_memory(
+            type="observation",
+            content={
+                "self_state": obs.self_state,
+                "local_state": obs.local_state,
+                "environment_state": obs.environment_state,
+            },
+        )
+        return obs
+
+    async def agenerate_obs(self) -> Observation:
+        """
+        Asynchronous version of generate_obs.
+
+        Builds the observation and stores it via async memory operations.
+        """
+        obs = self._build_observation()
+        await self.memory.aadd_to_memory(
+            type="observation",
+            content={
+                "self_state": obs.self_state,
+                "local_state": obs.local_state,
+                "environment_state": obs.environment_state,
+            },
+        )
+        return obs
 
     def _get_agent_location(self) -> tuple | None:
         """Get agent's current position."""
