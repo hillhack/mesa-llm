@@ -3,13 +3,24 @@
 The reasoning system in Mesa-LLM provides different cognitive strategies for agents to analyze situations, make decisions, and plan actions. It forms the core intelligence layer that transforms observations into actionable plans using structured thinking approaches. The reasoning module enables agents to process environmental observations and memory context into executable action plans through various cognitive frameworks.
 
 ---
-### class Observation(step : int, self_state : dict, local_state : dict)
-A structured snapshot containing the agent's current step, self-state (internal attributes, location, system context), and local-state (neighboring agents and their properties). This provides complete situational awareness for decision-making.
+### class Observation(step : int, self_state : dict, local_state : dict, environment_state : EnvironmentalState = None)
+A structured snapshot containing the agent's current step, self-state (internal attributes, location, system context), local-state (neighboring agents), and optionally environmental-state (grid properties, objects, navigability).
 
 **Attributes:**
 - **step** (int) - Current simulation step number
 - **self_state** (dict) - Agent's internal attributes, location, and system context
-- **local_state** (dict) - Neighboring agents and their properties
+- **local_state** (dict) - Neighboring agents detected within vision radius
+- **environment_state** (EnvironmentalState | None) - Detailed environmental perception data
+
+---
+### class EnvironmentalState()
+Detailed perception data about the agent's surroundings and the global simulation state.
+
+**Attributes:**
+- **current_cell** (dict) - Properties, objects, and navigability of the agent's current location
+- **visible_cells** (dict) - Mapping of position strings to data for cells within vision radius (distance, direction, bearing, etc.)
+- **statistics** (dict) - Aggregated stats for numeric properties across all visible cells
+- **global_environment** (dict) - Model-level global variables configured for perception
 
 ---
 ### class Plan(step : int, llm_plan : object, ttl : int = 1)
@@ -91,10 +102,9 @@ from mesa_llm.llm_agent import LLMAgent
 from mesa_llm.reasoning.cot import CoTReasoning
 
 class MyAgent(LLMAgent):
-    def __init__(self, model, api_key, **kwargs):
+    def __init__(self, model, **kwargs):
         super().__init__(
             model=model,
-            api_key=api_key,
             reasoning=CoTReasoning,  # Specify reasoning strategy
             **kwargs
         )

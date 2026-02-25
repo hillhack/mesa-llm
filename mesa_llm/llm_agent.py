@@ -1,3 +1,5 @@
+import contextlib
+
 from mesa.agent import Agent
 from mesa.model import Model
 from mesa.space import (
@@ -246,21 +248,17 @@ class LLMAgent(Agent):
 
         # Handle standard grids with get_neighbors
         if grid and hasattr(grid, "get_neighbors"):
-            try:
+            with contextlib.suppress(Exception):
                 return grid.get_neighbors(
                     pos, radius=int(self.vision), include_center=False
                 )
-            except:
-                pass
 
         # Handle continuous space
         if space and isinstance(space, ContinuousSpace):
-            try:
+            with contextlib.suppress(Exception):
                 return space.get_neighbors(
                     pos, radius=self.vision, include_center=False
                 )
-            except:
-                pass
 
         return []
 
@@ -355,12 +353,8 @@ class LLMAgent(Agent):
                 if name == "empty":
                     continue
                 try:
-                    if hasattr(layer, "data"):
-                        # PropertyLayer with data attribute
-                        value = layer.data[pos]
-                    else:
-                        # Direct dict-like access
-                        value = layer[pos]
+                    # PropertyLayer with data attribute if it exists, else direct dict-like access
+                    value = layer.data[pos] if hasattr(layer, "data") else layer[pos]
                     properties[name] = self._convert_property_value(value)
                 except (IndexError, KeyError, TypeError):
                     properties[name] = None
@@ -372,7 +366,7 @@ class LLMAgent(Agent):
         try:
             import numpy as np
 
-            if isinstance(value, (np.integer, np.floating)):
+            if isinstance(value, np.integer | np.floating):
                 return float(value)
             if isinstance(value, np.bool_):
                 return bool(value)
@@ -410,10 +404,8 @@ class LLMAgent(Agent):
         """Get cell object at position."""
         grid = getattr(self.model, "grid", None)
         if grid and hasattr(grid, "get_cell"):
-            try:
+            with contextlib.suppress(Exception):
                 return grid.get_cell(pos)
-            except:
-                pass
         return None
 
     def _object_to_dict(self, obj) -> dict:
@@ -454,16 +446,15 @@ class LLMAgent(Agent):
         grid = getattr(self.model, "grid", None)
 
         # Check walkable property layer
-        if grid and hasattr(grid, "properties"):
-            if "walkable" in grid.properties:
-                try:
-                    walkable_layer = grid.properties["walkable"]
-                    if hasattr(walkable_layer, "data"):
-                        return bool(walkable_layer.data[pos])
-                    else:
-                        return bool(walkable_layer[pos])
-                except (IndexError, KeyError):
-                    pass
+        if grid and hasattr(grid, "properties") and "walkable" in grid.properties:
+            try:
+                walkable_layer = grid.properties["walkable"]
+                if hasattr(walkable_layer, "data"):
+                    return bool(walkable_layer.data[pos])
+                else:
+                    return bool(walkable_layer[pos])
+            except (IndexError, KeyError):
+                pass
 
         # Check cell is not blocked
         cell = self._get_cell_at(pos)
@@ -530,13 +521,13 @@ class LLMAgent(Agent):
 
         # Add current cell properties
         for prop, value in current_cell.get("properties", {}).items():
-            if isinstance(value, (int, float)) and value is not None:
+            if isinstance(value, int | float) and value is not None:
                 all_props.setdefault(prop, []).append(value)
 
         # Add visible cell properties
         for cell_data in visible_cells.values():
             for prop, value in cell_data.get("properties", {}).items():
-                if isinstance(value, (int, float)) and value is not None:
+                if isinstance(value, int | float) and value is not None:
                     all_props.setdefault(prop, []).append(value)
 
         # Calculate stats for each property
@@ -572,10 +563,8 @@ class LLMAgent(Agent):
                 # Try to extract attributes
                 for attr in dir(env):
                     if not attr.startswith("_"):
-                        try:
+                        with contextlib.suppress(Exception):
                             global_env[attr] = getattr(env, attr)
-                        except:
-                            pass
 
         # Try individual attributes
         for attr in self.global_env_attributes:

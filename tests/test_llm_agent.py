@@ -1,14 +1,18 @@
-# tests/test_llm_agent.py
-
 import re
 
+import pytest
+from mesa.discrete_space import OrthogonalMooreGrid
 from mesa.model import Model
-from mesa.space import MultiGrid
+from mesa.space import ContinuousSpace, MultiGrid
 
 from mesa_llm import Plan
 from mesa_llm.llm_agent import LLMAgent
 from mesa_llm.memory.st_memory import ShortTermMemory
 from mesa_llm.reasoning.react import ReActReasoning
+
+DEFAULT_AGENT_CONFIG = {
+    "llm_model": "gemini/gemini-2.0-flash",
+}
 
 
 def test_apply_plan_adds_to_memory(monkeypatch):
@@ -518,7 +522,6 @@ def test_global_environment_perception(basic_model, disable_memory):
 def test_distance_direction_calculation(grid_model, disable_memory):
     """Test that distance and direction are calculated correctly."""
     try:
-        import numpy as np
         from mesa.experimental.cell_space import PropertyLayer
 
         grid_model.grid.properties = {
@@ -537,10 +540,10 @@ def test_distance_direction_calculation(grid_model, disable_memory):
 
         # Check that visible cells have distance and direction
         if obs.environment_state and obs.environment_state.visible_cells:
-            for cell_key, cell_data in obs.environment_state.visible_cells.items():
+            for _cell_key, cell_data in obs.environment_state.visible_cells.items():
                 assert "distance" in cell_data
                 assert "direction" in cell_data
-                assert isinstance(cell_data["distance"], (int, float))
+                assert isinstance(cell_data["distance"], int | float)
                 assert isinstance(cell_data["direction"], str)
 
     except ImportError:
