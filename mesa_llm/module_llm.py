@@ -157,11 +157,21 @@ class ModuleLLM:
             reraise=True,
         ):
             with attempt:
-                response = await acompletion(
-                    model=self.llm_model,
-                    messages=messages,
-                    tools=tool_schema,
-                    tool_choice=tool_choice if tool_schema else None,
-                    response_format=response_format,
-                )
+                if self.api_base:
+                    response = await acompletion(
+                        model=self.llm_model,
+                        messages=messages,
+                        api_base=self.api_base,
+                        tools=tool_schema,
+                        tool_choice=tool_choice if tool_schema else None,
+                        response_format=response_format,
+                    )
+                else:
+                    response = await acompletion(
+                        model=self.llm_model,
+                        messages=messages,
+                        tools=tool_schema,
+                        tool_choice=tool_choice if tool_schema else None,
+                        response_format=response_format,
+                    )
         return response
