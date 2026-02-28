@@ -150,23 +150,51 @@ class LLMAgent(Agent):
         self_state = {
             "agent_unique_id": self.unique_id,
             "system_prompt": self.system_prompt,
-            "location": self.pos if self.pos is not None else self.cell.coordinate,
+            "location": (
+                self.pos
+                if self.pos is not None
+                else (
+                    getattr(self, "cell", None).coordinate
+                    if getattr(self, "cell", None) is not None
+                    else None
+                )
+            ),
             "internal_state": self.internal_state,
         }
         if self.vision is not None and self.vision > 0:
-            if isinstance(self.model.grid, SingleGrid | MultiGrid):
-                neighbors = self.model.grid.get_neighbors(
-                    tuple(self.pos), moore=True, include_center=False, radius=1
-                )
-            elif isinstance(
-                self.model.grid, OrthogonalMooreGrid | OrthogonalVonNeumannGrid
-            ):
-                neighbors = []
-                for neighbor in self.cell.connections.values():
-                    neighbors.extend(neighbor.agents)
+            # Check which type of space/grid the model uses
+            grid = getattr(self.model, "grid", None)
+            space = getattr(self.model, "space", None)
 
-            elif isinstance(self.model.space, ContinuousSpace):
-                neighbors, _ = self.get_neighbors_in_radius(radius=self.vision)
+            if grid and isinstance(grid, SingleGrid | MultiGrid):
+                neighbors = grid.get_neighbors(
+                    tuple(self.pos),
+                    moore=True,
+                    include_center=False,
+                    radius=self.vision,
+                )
+            elif grid and isinstance(
+                grid, OrthogonalMooreGrid | OrthogonalVonNeumannGrid
+            ):
+                agent_cell = next(
+                    (cell for cell in grid.all_cells if self in cell.agents),
+                    None,
+                )
+                if agent_cell:
+                    neighborhood = agent_cell.get_neighborhood(radius=self.vision)
+                    neighbors = [a for cell in neighborhood for a in cell.agents]
+                else:
+                    neighbors = []
+
+            elif space and isinstance(space, ContinuousSpace):
+                all_nearby = space.get_neighbors(
+                    self.pos, radius=self.vision, include_center=True
+                )
+                neighbors = [a for a in all_nearby if a is not self]
+
+            else:
+                # No recognized grid/space type
+                neighbors = []
 
         elif self.vision == -1:
             all_agents = list(self.model.agents)
@@ -178,7 +206,15 @@ class LLMAgent(Agent):
         local_state = {}
         for i in neighbors:
             local_state[i.__class__.__name__ + " " + str(i.unique_id)] = {
-                "position": i.pos if i.pos is not None else i.cell.coordinate,
+                "position": (
+                    i.pos
+                    if i.pos is not None
+                    else (
+                        getattr(i, "cell", None).coordinate
+                        if getattr(i, "cell", None) is not None
+                        else None
+                    )
+                ),
                 "internal_state": [
                     s for s in i.internal_state if not s.startswith("_")
                 ],
