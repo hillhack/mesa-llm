@@ -2,15 +2,18 @@ import asyncio
 import concurrent.futures
 import inspect
 import json
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from terminal_style import sprint, style
+from terminal_style import style
 
 from mesa_llm.tools.tool_decorator import _GLOBAL_TOOL_REGISTRY, add_tool_callback
 
 if TYPE_CHECKING:
     from mesa_llm.llm_agent import LLMAgent
+
+logger = logging.getLogger(__name__)
 
 
 class ToolManager:
@@ -148,9 +151,11 @@ class ToolManager:
             }
 
         except Exception as e:
-            sprint(
-                f"Error executing tool call {index + 1} ({function_name}): {e!s}",
-                color="red",
+            logger.exception(
+                "Error executing tool call %s (%s): %s",
+                index + 1,
+                function_name,
+                e,
             )
             return {
                 "tool_call_id": tool_call_id,
