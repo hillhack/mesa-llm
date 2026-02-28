@@ -6,12 +6,15 @@ including agent observations, plans, actions, messages, and state changes.
 """
 
 import json
+import logging
 import pickle
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -277,7 +280,7 @@ class SimulationRecorder:
             with open(filepath, "wb") as f:
                 pickle.dump(export_data, f)
 
-        print(f"Simulation recording saved to: {filepath}")
+        logger.info("Simulation recording saved to: %s", filepath)
         return filepath
 
     def get_stats(self) -> dict[str, Any]:
