@@ -26,12 +26,15 @@ Parameters
 """
 
 import atexit
+import logging
 from collections.abc import Callable
 from functools import wraps
 
 from mesa.model import Model
 
 from mesa_llm.recording.simulation_recorder import SimulationRecorder
+
+logger = logging.getLogger(__name__)
 
 
 def _attach_recorder_to_agents(model: Model, recorder: SimulationRecorder):
@@ -85,8 +88,8 @@ def record_model(
                 # Avoid creating multiple identical files if already saved manually
                 if hasattr(self, "recorder") and self.recorder.events:
                     self.save_recording()
-            except Exception as exc:  # pragma: no cover - defensive
-                print(f"[SimulationRecorder] Auto-save failed: {exc}")
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("SimulationRecorder auto-save failed")
 
         atexit.register(_auto_save)
 

@@ -6,12 +6,15 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import logging
 from typing import TYPE_CHECKING
 
 from mesa.agent import Agent, AgentSet
 
 if TYPE_CHECKING:
     from .llm_agent import LLMAgent
+
+logger = logging.getLogger(__name__)
 
 # Global variable to control parallel stepping mode
 _PARALLEL_STEPPING_MODE = "asyncio"  # or "threading"
@@ -106,7 +109,7 @@ def _agentset_do_async(self, method: str, *args, **kwargs):
     Call the given async method on all agents in the set in parallel.
     Usage: await agents.do_async("async_function")
     """
-    print(f"Running async method '{method}' on {len(self)} agents")
+    logger.info("Running async method '%s' on %d agents", method, len(self))
 
     async def _run():
         tasks = []

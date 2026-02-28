@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import time
 import unittest
@@ -7,6 +8,8 @@ from unittest.mock import MagicMock, patch
 from mesa_llm.llm_agent import LLMAgent
 from mesa_llm.parallel_stepping import step_agents_parallel
 from mesa_llm.reasoning.reasoning import Reasoning
+
+logger = logging.getLogger(__name__)
 
 os.environ["OPENAI_API_KEY"] = "test"
 
@@ -81,7 +84,7 @@ class TestAsyncMemoryFix(unittest.IsolatedAsyncioTestCase):
         await step_agents_parallel(agents)
         duration = time.perf_counter() - start
 
-        print(f"\nTotal time: {duration:.4f}s")
+        logger.info("Total time: %.4fs", duration)
 
         # Serial ≈ 3s, Parallel ≈ 1s
         self.assertLess(duration, 2.0)
