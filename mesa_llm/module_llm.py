@@ -37,9 +37,14 @@ class ModuleLLM:
         Initialize the LLM module
 
         Args:
-            llm_model: The model to use for the LLM in the format of {provider}/{LLM}
+            llm_model: The model to use for the LLM in the format
+                "{provider}/{model}" (for example, "openai/gpt-4o").
             api_base: The API base to use if the LLM provider is Ollama
             system_prompt: The system prompt to use for the LLM
+
+        Raises:
+            ValueError: If llm_model is not in the expected "{provider}/{model}"
+                format, or if the provider API key is missing.
         """
         self.api_base = api_base
         self.llm_model = llm_model
