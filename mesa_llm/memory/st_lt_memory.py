@@ -88,14 +88,16 @@ class STLTMemory(Memory):
         Update the long term memory by summarizing the short term memory with a LLM
         """
         prompt = self._build_consolidation_prompt()
-        self.long_term_memory = self.llm.generate(prompt)
+        response = self.llm.generate(prompt)
+        self.long_term_memory = response.choices[0].message.content
 
     async def _aupdate_long_term_memory(self):
         """
         Async Function to update long term memory
         """
         prompt = self._build_consolidation_prompt()
-        self.long_term_memory = await self.llm.agenerate(prompt)
+        response = await self.llm.agenerate(prompt)
+        self.long_term_memory = response.choices[0].message.content
 
     def _process_step_core(self, pre_step: bool):
         """

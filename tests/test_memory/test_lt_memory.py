@@ -20,17 +20,16 @@ class TestLTMemory:
         assert memory.long_term_memory == ""
         assert memory.llm.system_prompt is not None
 
-    def test_update_long_term_memory(self, mock_agent, mock_llm):
-        """Test updating long-term memory functionality"""
-        # Mock the LLM's generate method
-        mock_llm.generate.return_value = "Updated long-term memory"
+    def test_update_long_term_memory(self, mock_agent, mock_llm, llm_response_factory):
+        """Check that long_term_memory gets the actual text, not the whole response object."""
+        mock_llm.generate.return_value = llm_response_factory(
+            "Updated long-term memory"
+        )
 
         memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
-        # Replace the real LLM with our mock
         memory.llm = mock_llm
         memory.long_term_memory = "Previous memory"
 
-        # Add some content to buffer
         memory.buffer = MemoryEntry(
             agent=mock_agent,
             content={"message": "Test message"},
@@ -39,15 +38,39 @@ class TestLTMemory:
 
         memory._update_long_term_memory()
 
-        # Verify LLM can call with correct prompt structure
         call_args = mock_llm.generate.call_args[0][0]
         assert "new memory entry" in call_args
         assert "Long term memory" in call_args
 
+        assert isinstance(memory.long_term_memory, str)
         assert memory.long_term_memory == "Updated long-term memory"
 
+    def test_long_term_memory_stores_string_not_response_object(
+        self, mock_agent, mock_llm, llm_response_factory
+    ):
+        """Make sure long_term_memory is always a plain string.
+        Before this fix, it was storing the whole LLM response object instead
+        of just the text — which broke any prompt that used the memory.
+        """
+        mock_llm.generate.return_value = llm_response_factory(
+            "This is the summary text"
+        )
+
+        memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
+        memory.llm = mock_llm
+        memory.buffer = MemoryEntry(
+            agent=mock_agent, content={"observation": "test"}, step=1
+        )
+
+        memory._update_long_term_memory()
+
+        assert isinstance(memory.long_term_memory, str), (
+            "long_term_memory must be a string, not a ModelResponse object"
+        )
+        assert memory.long_term_memory == "This is the summary text"
+
     # process step test
-    def test_process_step(self, mock_agent):
+    def test_process_step(self, mock_agent, llm_response_factory):
         """Test process_step functionality"""
         memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
 
@@ -58,13 +81,15 @@ class TestLTMemory:
         # Process the step
         with (
             patch("rich.console.Console"),
-            patch.object(memory.llm, "generate", return_value="mocked summary"),
+            patch.object(
+                memory.llm,
+                "generate",
+                return_value=llm_response_factory("mocked summary"),
+            ),
         ):
             memory.process_step(pre_step=True)
             assert isinstance(memory.buffer, MemoryEntry)
-            # assert memory.buffer is not None
 
-            # Process post-step
             memory.process_step(pre_step=False)
             assert memory.long_term_memory == "mocked summary"
 
@@ -77,14 +102,14 @@ class TestLTMemory:
         assert memory.format_long_term() == "Long-term summary"
 
     @pytest.mark.asyncio
-    async def test_aupdate_long_term_memory(self, mock_agent, mock_llm):
-        """
-        The _aupdate_long_term_memory is the async version of the update_long_term_memory, it checks whether the agenerate() method is called
-        and also stores the return value to self.long_term_memory
-
-        The test function ensures that these 2 conditions are checked and verified.
-        """
-        mock_llm.agenerate = AsyncMock(return_value="async summary")
+    async def test_aupdate_long_term_memory(
+        self, mock_agent, mock_llm, llm_response_factory
+    ):
+        """Same as above but for the async version — makes sure it also
+        saves just the text, not the whole response object."""
+        mock_llm.agenerate = AsyncMock(
+            return_value=llm_response_factory("async summary")
+        )
 
         memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
         memory.llm = mock_llm
@@ -92,14 +117,12 @@ class TestLTMemory:
 
         await memory._aupdate_long_term_memory()
 
-        # checks whether agenerate() function was called once
         mock_llm.agenerate.assert_called_once()
-
-        # checks to ensure that the the long term memory is updated correctly with the value we gave through agenerate()
+        assert isinstance(memory.long_term_memory, str)
         assert memory.long_term_memory == "async summary"
 
     @pytest.mark.asyncio
-    async def test_aprocess_step(self, mock_agent):
+    async def test_aprocess_step(self, mock_agent, llm_response_factory):
         """
         Test asynchronous aprocess_step functionality
 
@@ -115,15 +138,15 @@ class TestLTMemory:
         memory.add_to_memory("plan", {"content": "Test plan"})
 
         # Mock async LLM call
-        memory.llm.agenerate = AsyncMock(return_value="mocked async summary")
+        memory.llm.agenerate = AsyncMock(
+            return_value=llm_response_factory("mocked async summary")
+        )
 
         with patch("rich.console.Console"):
-            # Pre-step assertion is used to check if a new memory entry was created correctly as intended
             await memory.aprocess_step(pre_step=True)
             assert isinstance(memory.buffer, MemoryEntry)
             assert memory.buffer.step is None
 
-            # Post-step assertion is used to check if the previous content was restored
             await memory.aprocess_step(pre_step=False)
             assert memory.long_term_memory == "mocked async summary"
             assert memory.step_content == {}

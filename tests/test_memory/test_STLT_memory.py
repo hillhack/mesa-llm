@@ -56,9 +56,11 @@ class TestSTLTMemory:
             # Process post-step
             memory.process_step(pre_step=False)
 
-    def test_memory_consolidation(self, mock_agent, mock_llm):
+    def test_memory_consolidation(self, mock_agent, mock_llm, llm_response_factory):
         """Test memory consolidation when capacity is exceeded"""
-        mock_llm.generate.return_value = "Consolidated memory summary"
+        mock_llm.generate.return_value = llm_response_factory(
+            "Consolidated memory summary"
+        )
 
         memory = STLTMemory(
             agent=mock_agent,
@@ -107,24 +109,48 @@ class TestSTLTMemory:
         memory.long_term_memory = "Long-term summary"
         assert memory.format_long_term() == "Long-term summary"
 
-    def test_update_long_term_memory(self, mock_agent, mock_llm):
-        """Test long-term memory update process"""
-        mock_llm.generate.return_value = "Updated long-term memory"
+    def test_update_long_term_memory(self, mock_agent, mock_llm, llm_response_factory):
+        """Check that after consolidation, long_term_memory holds the actual
+        text from the LLM response, not some object."""
+        mock_llm.generate.return_value = llm_response_factory(
+            "Updated long-term memory"
+        )
 
         memory = STLTMemory(agent=mock_agent, llm_model="provider/test_model")
-        # Replace the real LLM with our mock
         memory.llm = mock_llm
         memory.long_term_memory = "Previous memory"
 
         memory._update_long_term_memory()
 
-        # Verify LLM was called with correct prompt structure
         call_args = mock_llm.generate.call_args[0][0]
         assert "Short term memory:" in call_args
         assert "Long term memory:" in call_args
         assert "Previous memory" in call_args
 
+        # Must be a plain string, not a ModelResponse object
+        assert isinstance(memory.long_term_memory, str)
         assert memory.long_term_memory == "Updated long-term memory"
+
+    def test_long_term_memory_stores_string_not_response_object(
+        self, mock_agent, mock_llm, llm_response_factory
+    ):
+        """Make sure long_term_memory is always a plain string.
+        Before this fix, it was storing the whole LLM response object instead
+        of just the text — which broke any prompt that used the memory.
+        """
+        mock_llm.generate.return_value = llm_response_factory(
+            "This is the summary text"
+        )
+
+        memory = STLTMemory(agent=mock_agent, llm_model="provider/test_model")
+        memory.llm = mock_llm
+
+        memory._update_long_term_memory()
+
+        assert isinstance(memory.long_term_memory, str), (
+            "long_term_memory must be a string, not a ModelResponse object"
+        )
+        assert memory.long_term_memory == "This is the summary text"
 
     def test_observation_tracking(self, mock_agent):
         """Test that observations are properly tracked and only changes stored"""
