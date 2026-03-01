@@ -1,5 +1,5 @@
 from collections import deque
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from mesa_llm.memory.memory import MemoryEntry
 from mesa_llm.memory.st_lt_memory import STLTMemory
@@ -56,12 +56,11 @@ class TestSTLTMemory:
             # Process post-step
             memory.process_step(pre_step=False)
 
-    def test_memory_consolidation(self, mock_agent, mock_llm):
+    def test_memory_consolidation(self, mock_agent, mock_llm, llm_response_factory):
         """Test memory consolidation when capacity is exceeded"""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Consolidated memory summary"
-        mock_llm.generate.return_value = mock_response
+        mock_llm.generate.return_value = llm_response_factory(
+            "Consolidated memory summary"
+        )
 
         memory = STLTMemory(
             agent=mock_agent,
@@ -110,13 +109,12 @@ class TestSTLTMemory:
         memory.long_term_memory = "Long-term summary"
         assert memory.format_long_term() == "Long-term summary"
 
-    def test_update_long_term_memory(self, mock_agent, mock_llm):
+    def test_update_long_term_memory(self, mock_agent, mock_llm, llm_response_factory):
         """Check that after consolidation, long_term_memory holds the actual
         text from the LLM response, not some object."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Updated long-term memory"
-        mock_llm.generate.return_value = mock_response
+        mock_llm.generate.return_value = llm_response_factory(
+            "Updated long-term memory"
+        )
 
         memory = STLTMemory(agent=mock_agent, llm_model="provider/test_model")
         memory.llm = mock_llm
@@ -134,16 +132,15 @@ class TestSTLTMemory:
         assert memory.long_term_memory == "Updated long-term memory"
 
     def test_long_term_memory_stores_string_not_response_object(
-        self, mock_agent, mock_llm
+        self, mock_agent, mock_llm, llm_response_factory
     ):
         """Make sure long_term_memory is always a plain string.
         Before this fix, it was storing the whole LLM response object instead
         of just the text — which broke any prompt that used the memory.
         """
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "This is the summary text"
-        mock_llm.generate.return_value = mock_response
+        mock_llm.generate.return_value = llm_response_factory(
+            "This is the summary text"
+        )
 
         memory = STLTMemory(agent=mock_agent, llm_model="provider/test_model")
         memory.llm = mock_llm

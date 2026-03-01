@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -20,12 +20,11 @@ class TestLTMemory:
         assert memory.long_term_memory == ""
         assert memory.llm.system_prompt is not None
 
-    def test_update_long_term_memory(self, mock_agent, mock_llm):
+    def test_update_long_term_memory(self, mock_agent, mock_llm, llm_response_factory):
         """Check that long_term_memory gets the actual text, not the whole response object."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Updated long-term memory"
-        mock_llm.generate.return_value = mock_response
+        mock_llm.generate.return_value = llm_response_factory(
+            "Updated long-term memory"
+        )
 
         memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
         memory.llm = mock_llm
@@ -47,16 +46,15 @@ class TestLTMemory:
         assert memory.long_term_memory == "Updated long-term memory"
 
     def test_long_term_memory_stores_string_not_response_object(
-        self, mock_agent, mock_llm
+        self, mock_agent, mock_llm, llm_response_factory
     ):
         """Make sure long_term_memory is always a plain string.
         Before this fix, it was storing the whole LLM response object instead
         of just the text — which broke any prompt that used the memory.
         """
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "This is the summary text"
-        mock_llm.generate.return_value = mock_response
+        mock_llm.generate.return_value = llm_response_factory(
+            "This is the summary text"
+        )
 
         memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
         memory.llm = mock_llm
@@ -72,7 +70,7 @@ class TestLTMemory:
         assert memory.long_term_memory == "This is the summary text"
 
     # process step test
-    def test_process_step(self, mock_agent):
+    def test_process_step(self, mock_agent, llm_response_factory):
         """Test process_step functionality"""
         memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
 
@@ -81,12 +79,13 @@ class TestLTMemory:
         memory.add_to_memory("plan", {"content": "Test plan"})
 
         # Process the step
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "mocked summary"
         with (
             patch("rich.console.Console"),
-            patch.object(memory.llm, "generate", return_value=mock_response),
+            patch.object(
+                memory.llm,
+                "generate",
+                return_value=llm_response_factory("mocked summary"),
+            ),
         ):
             memory.process_step(pre_step=True)
             assert isinstance(memory.buffer, MemoryEntry)
@@ -103,13 +102,14 @@ class TestLTMemory:
         assert memory.format_long_term() == "Long-term summary"
 
     @pytest.mark.asyncio
-    async def test_aupdate_long_term_memory(self, mock_agent, mock_llm):
+    async def test_aupdate_long_term_memory(
+        self, mock_agent, mock_llm, llm_response_factory
+    ):
         """Same as above but for the async version — makes sure it also
         saves just the text, not the whole response object."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "async summary"
-        mock_llm.agenerate = AsyncMock(return_value=mock_response)
+        mock_llm.agenerate = AsyncMock(
+            return_value=llm_response_factory("async summary")
+        )
 
         memory = LongTermMemory(agent=mock_agent, llm_model="provider/test_model")
         memory.llm = mock_llm
@@ -122,7 +122,7 @@ class TestLTMemory:
         assert memory.long_term_memory == "async summary"
 
     @pytest.mark.asyncio
-    async def test_aprocess_step(self, mock_agent):
+    async def test_aprocess_step(self, mock_agent, llm_response_factory):
         """
         Test asynchronous aprocess_step functionality
 
@@ -138,10 +138,9 @@ class TestLTMemory:
         memory.add_to_memory("plan", {"content": "Test plan"})
 
         # Mock async LLM call
-        mock_async_response = MagicMock()
-        mock_async_response.choices = [MagicMock()]
-        mock_async_response.choices[0].message.content = "mocked async summary"
-        memory.llm.agenerate = AsyncMock(return_value=mock_async_response)
+        memory.llm.agenerate = AsyncMock(
+            return_value=llm_response_factory("mocked async summary")
+        )
 
         with patch("rich.console.Console"):
             await memory.aprocess_step(pre_step=True)
