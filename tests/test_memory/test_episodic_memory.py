@@ -45,6 +45,14 @@ def test_normalize_dict_floats_logic():
     assert norm_tie[1] == 0.5
 
 
+def test_normalize_dict_floats_logic_when_empty():
+    """
+    Function to check whether normalize_dict_values correctly returns an empty dict
+    """
+    norm = normalize_dict_values({}, 0, 1)
+    assert norm == {}
+
+
 class TestEpisodicMemory:
     """Core functionality test"""
 
@@ -311,3 +319,39 @@ class TestEpisodicMemory:
         result = memory.retrieve_top_k_entries(3)
 
         assert result == []
+
+    def test_extract_importance_flat(self, mock_agent):
+        """Function to return importance when stored at top level"""
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+        entry = MemoryEntry(
+            content={"importance": 5, "message": "hello"},
+            step=1,
+            agent=mock_agent,
+        )
+        result = memory._extract_importance(entry)
+        assert result == 5
+
+    def test_extract_importance_nested(self, mock_agent):
+        """Should return importance when nested inside another dict"""
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+
+        entry = MemoryEntry(
+            content={"message": {"importance": 4, "text": "nested"}},
+            step=1,
+            agent=mock_agent,
+        )
+        result = memory._extract_importance(entry)
+
+        assert result == 4
+
+    def test_extract_importance_missing(self, mock_agent):
+        """Should fallback to 1 when importance is absent"""
+        memory = EpisodicMemory(agent=mock_agent, llm_model="provider/test_model")
+
+        entry = MemoryEntry(
+            content={"message": {"text": "no importance"}},
+            step=1,
+            agent=mock_agent,
+        )
+        result = memory._extract_importance(entry)
+        assert result == 1
