@@ -20,6 +20,28 @@ _GLOBAL_TOOL_REGISTRY: dict[str, Callable] = {}
 _TOOL_CALLBACKS: list[Callable[[Callable], None]] = []
 
 
+def requires(precondition: Callable[[Any], bool], reason: str | None = None):
+    """
+    Decorator to specify a precondition for a tool.
+
+    Args:
+        precondition: A function that takes an agent and returns True if the tool
+            is currently feasible for that agent, False otherwise.
+        reason: Optional human-readable explanation of why the tool is currently
+            unavailable. Used for logging and differentiated planning.
+    """
+
+    def decorator(func: Callable):
+        if not hasattr(func, "__tool_requirements__"):
+            func.__tool_requirements__ = []
+        func.__tool_requirements__.append(
+            {"precondition": precondition, "reason": reason}
+        )
+        return func
+
+    return decorator
+
+
 def add_tool_callback(callback: Callable[[Callable], None]):
     """Add a callback to be called when a new tool is registered"""
     _TOOL_CALLBACKS.append(callback)
