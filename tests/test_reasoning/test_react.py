@@ -82,7 +82,7 @@ class TestReActReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         # Mock the LLM response
         mock_response = Mock()
@@ -117,7 +117,7 @@ class TestReActReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         # Mock the LLM response
         mock_response = Mock()
@@ -137,7 +137,9 @@ class TestReActReasoning:
         result = reasoning.plan(obs=obs, ttl=3, selected_tools=selected_tools)
 
         assert result == mock_plan
-        mock_agent.tool_manager.get_all_tools_schema.assert_called_with(selected_tools)
+        mock_agent.tool_manager.get_annotated_tools_schema.assert_called_with(
+            agent=mock_agent, selected_tools=selected_tools
+        )
         reasoning.execute_tool_call.assert_called_once_with(
             "test_action",
             selected_tools=selected_tools,
@@ -171,7 +173,7 @@ class TestReActReasoning:
         mock_agent.memory.aadd_to_memory = AsyncMock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         # Mock the async LLM response
         mock_response = Mock()

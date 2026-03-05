@@ -85,7 +85,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         # Mock the LLM response for planning
         mock_plan_response = Mock()
@@ -139,7 +139,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         # Mock the LLM response for planning
         mock_plan_response = Mock()
@@ -177,7 +177,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         # Mock the LLM response for planning
         mock_plan_response = Mock()
@@ -201,7 +201,9 @@ class TestReWOOReasoning:
         result = reasoning.plan(selected_tools=selected_tools)
 
         assert isinstance(result, Plan)
-        mock_agent.tool_manager.get_all_tools_schema.assert_called_with(selected_tools)
+        mock_agent.tool_manager.get_annotated_tools_schema.assert_called_with(
+            agent=mock_agent, selected_tools=selected_tools
+        )
 
     def test_plan_no_prompt_error(self):
         """Test plan method raises error when no prompt is provided."""
@@ -232,7 +234,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         # Mock the LLM response for planning
         mock_plan_response = Mock()
@@ -295,7 +297,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         mock_plan_response = Mock()
         mock_plan_response.choices = [Mock()]
@@ -345,7 +347,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         mock_plan_response = Mock()
         mock_plan_response.choices = [Mock()]
@@ -385,7 +387,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         mock_plan_response = Mock()
         mock_plan_response.choices = [Mock()]
@@ -429,7 +431,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         mock_plan_response = Mock()
         mock_plan_response.choices = [Mock()]
@@ -455,7 +457,9 @@ class TestReWOOReasoning:
         )
 
         assert isinstance(result, Plan)
-        mock_agent.tool_manager.get_all_tools_schema.assert_called_with(selected_tools)
+        mock_agent.tool_manager.get_annotated_tools_schema.assert_called_with(
+            agent=mock_agent, selected_tools=selected_tools
+        )
 
     def test_aplan_with_no_tool_calls(self):
         """Test aplan method when execution returns no tool calls."""
@@ -469,7 +473,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         mock_plan_response = Mock()
         mock_plan_response.choices = [Mock()]
@@ -507,7 +511,7 @@ class TestReWOOReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
 
         mock_plan_response = Mock()
         mock_plan_response.choices = [Mock()]

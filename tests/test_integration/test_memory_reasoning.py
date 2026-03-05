@@ -38,7 +38,8 @@ def make_mock_agent(memory_instance, *, step_prompt="You are an agent in a simul
     agent.step_prompt = step_prompt
     agent.llm = Mock()
     agent.tool_manager = Mock()
-    agent.tool_manager.get_all_tools_schema.return_value = {}
+    agent.tool_manager.get_annotated_tools_schema.return_value = {}
+    agent.tool_manager.get_feasible_tools_schema.return_value = {}
     agent._step_display_data = {}
 
     # Wire memory
@@ -169,7 +170,8 @@ class TestCoTWithSTLTMemory:
         agent.step_prompt = "You are an agent"
         agent.llm = Mock()
         agent.tool_manager = Mock()
-        agent.tool_manager.get_all_tools_schema.return_value = {}
+        agent.tool_manager.get_annotated_tools_schema.return_value = {}
+        agent.tool_manager.get_feasible_tools_schema.return_value = {}
         agent._step_display_data = {}
 
         memory = STLTMemory(
@@ -244,7 +246,8 @@ class TestCoTWithEpisodicMemory:
         agent.step_prompt = "You are an agent"
         agent.llm = Mock()
         agent.tool_manager = Mock()
-        agent.tool_manager.get_all_tools_schema.return_value = {}
+        agent.tool_manager.get_annotated_tools_schema.return_value = {}
+        agent.tool_manager.get_feasible_tools_schema.return_value = {}
         agent._step_display_data = {}
 
         memory = EpisodicMemory(
@@ -328,7 +331,8 @@ class TestReActWithSTLTMemory:
         agent.step_prompt = "You are an agent"
         agent.llm = Mock()
         agent.tool_manager = Mock()
-        agent.tool_manager.get_all_tools_schema.return_value = {}
+        agent.tool_manager.get_annotated_tools_schema.return_value = {}
+        agent.tool_manager.get_feasible_tools_schema.return_value = {}
 
         memory = STLTMemory(
             agent=agent,
@@ -444,7 +448,8 @@ class TestReActWithEpisodicMemory:
         agent.step_prompt = "You are an agent"
         agent.llm = Mock()
         agent.tool_manager = Mock()
-        agent.tool_manager.get_all_tools_schema.return_value = {}
+        agent.tool_manager.get_annotated_tools_schema.return_value = {}
+        agent.tool_manager.get_feasible_tools_schema.return_value = {}
 
         memory = EpisodicMemory(
             agent=agent,
@@ -556,7 +561,7 @@ class TestReWOOWithSTLTMemory:
         agent.step_prompt = "You are an agent"
         agent.llm = Mock()
         agent.tool_manager = Mock()
-        agent.tool_manager.get_all_tools_schema.return_value = {}
+        agent.tool_manager.get_annotated_tools_schema.return_value = {}
         agent._step_display_data = {}
         default_obs = Observation(step=1, self_state={}, local_state={})
         agent.generate_obs = Mock(return_value=default_obs)
@@ -637,7 +642,7 @@ class TestReWOOWithEpisodicMemory:
         agent.step_prompt = "You are an agent"
         agent.llm = Mock()
         agent.tool_manager = Mock()
-        agent.tool_manager.get_all_tools_schema.return_value = {}
+        agent.tool_manager.get_annotated_tools_schema.return_value = {}
         agent._step_display_data = {}
         default_obs = Observation(step=1, self_state={}, local_state={})
         agent.generate_obs = Mock(return_value=default_obs)

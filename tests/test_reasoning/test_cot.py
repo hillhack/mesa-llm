@@ -107,7 +107,8 @@ class TestCoTReasoning:
         mock_agent.memory.add_to_memory = Mock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_feasible_tools_schema.return_value = {}
         mock_agent._step_display_data = {}  # Use real dict instead of Mock
         # Mock the LLM response for planning
         mock_plan_response = Mock()
@@ -132,7 +133,8 @@ class TestCoTReasoning:
         assert isinstance(result, Plan)
         assert result.ttl == 3
         # Check that tool schema was called with selected tools
-        assert mock_agent.tool_manager.get_all_tools_schema.call_count == 2
+        assert mock_agent.tool_manager.get_annotated_tools_schema.call_count == 1
+        assert mock_agent.tool_manager.get_feasible_tools_schema.call_count == 1
 
     def test_plan_no_prompt_error(self):
         """Test plan method raises error when no prompt is provided."""
@@ -158,7 +160,8 @@ class TestCoTReasoning:
         mock_agent.memory.aadd_to_memory = AsyncMock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_feasible_tools_schema.return_value = {}
         mock_agent._step_display_data = {}
 
         mock_plan_response = Mock()
@@ -192,7 +195,8 @@ class TestCoTReasoning:
         mock_agent.memory.aadd_to_memory = AsyncMock()
         mock_agent.llm = Mock()
         mock_agent.tool_manager = Mock()
-        mock_agent.tool_manager.get_all_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_annotated_tools_schema.return_value = {}
+        mock_agent.tool_manager.get_feasible_tools_schema.return_value = {}
         mock_agent._step_display_data = {}  # Use real dict instead of Mock
 
         # Mock the async LLM response for planning
