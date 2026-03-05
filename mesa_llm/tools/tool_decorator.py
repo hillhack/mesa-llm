@@ -113,6 +113,27 @@ def _python_to_json_type(py_type: Any) -> dict[str, Any]:
                                 "type": "array",
                                 "items": _python_to_json_type(item_type),
                             }
+                    elif base is dict:
+                        # Handle dict[str, int]
+                        if "," in inner_content:
+                            parts = inner_content.split(",")
+                            if len(parts) >= 2:
+                                value_type_str = parts[1].strip()
+                                # We assume key is string for LLM tools
+                                type_mapping = {
+                                    "int": int,
+                                    "str": str,
+                                    "float": float,
+                                    "bool": bool,
+                                }
+                                value_type = type_mapping.get(value_type_str, str)
+                                return {
+                                    "type": "object",
+                                    "additionalProperties": _python_to_json_type(
+                                        value_type
+                                    ),
+                                }
+                        return {"type": "object"}
 
             # Try to get the base type for simple cases
             base_type = py_type.split("[")[0].strip()
@@ -127,6 +148,10 @@ def _python_to_json_type(py_type: Any) -> dict[str, Any]:
             }
             if base_type in type_mapping:
                 py_type = type_mapping[base_type]
+            else:
+                # If it's a string that doesn't match any known basic type,
+                # we default to string as per standard LLM tool practices.
+                return {"type": "string"}
 
         except Exception:
             # If parsing fails, default to string
