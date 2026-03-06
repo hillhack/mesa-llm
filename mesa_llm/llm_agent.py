@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any
 
 from mesa.agent import Agent
 from mesa.discrete_space import (

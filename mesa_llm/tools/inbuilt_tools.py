@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from mesa.discrete_space import (
     OrthogonalMooreGrid,
